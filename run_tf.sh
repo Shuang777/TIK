@@ -24,7 +24,7 @@ if $debug; then
   train_ali=exp/tri4_ali_30kshort
 fi
 
-cv=data/train_dev
+cv=data/train_dev_debug
 cv_ali=exp/tri4_ali_dev
 
 lang=data/lang_sw1_tg
@@ -36,6 +36,7 @@ $debug && debug_args='-m pdb'
 if [ $stage -le 0 ]; then
 ## Train
 python $debug_args steps_tf/run_tf.py $cv $cv_ali $train $train_ali $gmm $exp
+exit
 
 ## Get priors: Make a Python script to do this.
 ali-to-pdf $gmm/final.mdl ark:"gunzip -c ${gmm}_ali/ali.*.gz |" ark,t:- | \

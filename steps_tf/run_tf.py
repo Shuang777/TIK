@@ -31,29 +31,36 @@ ali_tr  = sys.argv[4]
 gmm     = sys.argv[5]
 exp     = sys.argv[6]
 
-#read config file
+# read config file
 config = configparser.ConfigParser()
 config.read('config/swbd.cfg')
 
-#prepare data dir
+# prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
 shutil.copyfile(gmm+'/tree', exp+'/tree')
 shutil.copyfile(gmm+'/final.mdl', exp+'/final.mdl')
 shutil.copyfile(gmm+'/final.mat', exp+'/final.mat')
 
-#get the feature input dim
+# get the feature input dim
 output_dim = readOutputFeatDim(gmm)
 
-#prepare data
+# prepare data
 trGen = dataGenerator (data_tr, ali_tr, ali_tr, exp, 'train', config.getint('nnet', 'batch_size'), shuffle=True)
-#cvGen = dataGenerator (data_cv, ali_cv, ali_cv, exp, 'cv', config.get('nnet', 'batch_size'))
-cvGen = None
+cvGen = dataGenerator (data_cv, ali_cv, ali_cv, exp, 'cv', config.getint('nnet', 'batch_size'))
+#cvGen = None
 
-#create the neural net
-nnet = Nnet(config, trGen.getFeatDim(), output_dim, exp)
+# create the neural net
+nnet = Nnet(config, trGen.getFeatDim(), output_dim)
+nnet.init_nnet()
 
 #train the neural net
-print '### training neural net at ' + str(datetime.datetime.today())
-nnet.train(trGen, cvGen)
+print '### neural net training started at ' + str(datetime.datetime.today())
+nnet.train(trGen)
+print '### neural net training finished at ' + str(datetime.datetime.today())
+
+print '### neural net testing started at ' + str(datetime.datetime.today())
+nnet.test(cvGen)
+
+nnet.write(exp + '/model.chpt')
 
 print '### training complete at ' + str(datetime.datetime.today())
