@@ -120,14 +120,13 @@ class dataGenerator:
       return True
         
             
-
     ## Retrive a mini batch
     def get_batch (self, feats_pl, labels_pl):
         # read split data until we have enough for this batch
         while (self.batchPointer + self.batchSize >= len (self.x)):
             if not self.loop and self.splitDataCounter == self.numSplit:
                 # not loop mode and we arrive the end, do not read anymore
-                break
+                return None
 
             x,y = self.getNextSplitData()
             self.x = numpy.concatenate ((self.x[self.batchPointer:], x))

@@ -23,6 +23,8 @@ if __name__ != '__main__':
 if len(sys.argv) != 7:
     raise TypeError ('USAGE: train.py data_cv ali_cv data_tr ali_tr gmm_dir dnn_dir')
 
+print "### command line"
+print " ".join(sys.argv)
 
 data_cv = sys.argv[1]
 ali_cv  = sys.argv[2]
