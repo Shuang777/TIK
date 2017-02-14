@@ -12,16 +12,18 @@ DEVNULL = open(os.devnull, 'w')
 class dataGenerator:
     def __init__ (self, data, ali, 
                   transDir, exp, name, 
-                  batchSize=256, 
+                  conf, 
                   seed=777, 
                   shuffle=False,
                   loop=False):
+        
+        self.conf = dict(conf)
         self.data = data
         self.ali = ali
         self.exp = exp
         self.name = name
-        self.batchSize = batchSize
-        self.splice = 5
+        self.batchSize = int(self.conf['batch_size'])
+        self.splice = int(self.conf['context_width'])
         self.loop = loop    # keep looping over dataset
         self.maxSplitDataSize = 1000 ## These many utterances are loaded into memory at once.
 
@@ -154,3 +156,6 @@ class dataGenerator:
 
     def get_batch_size(self):
         return self.batchSize
+
+    def reset_batch(self):
+        self.splitDataCounter = 0
