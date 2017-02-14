@@ -11,12 +11,12 @@ class Nnet(object):
     def __init__(self, conf, input_dim, output_dim, seed=777):
 
         #get nnet structure configs
-        self.conf = dict(conf.items('nnet'))
+        self.conf = dict(conf)
 
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.hidden_units = 1024
-        self.learning_rate = 0.1
+        self.hidden_units = int(self.conf['hidden_units'])
+        self.hidden_layers = int(self.conf['num_hidden_layers'])
         self.batch_size = int(self.conf['batch_size'])
 
         self.graph = tf.Graph()
@@ -25,13 +25,14 @@ class Nnet(object):
             tf.set_random_seed(seed)
 
             self.feats_holder, self.labels_holder = nnet.placeholder_inputs(self.input_dim, self.batch_size)
+            self.learning_rate_holder = tf.placeholder(tf.float32, shape=[])
 
             logits = nnet.inference(self.feats_holder, self.input_dim, 
-                    self.hidden_units, self.hidden_units, self.output_dim)
+                    self.hidden_units, self.hidden_layers, self.output_dim, self.conf['nonlin'])
 
             self.loss = nnet.loss(logits, self.labels_holder)
 
-            self.train_op = nnet.training(self.loss, self.learning_rate)
+            self.train_op = nnet.training(self.loss, self.learning_rate_holder)
 
             self.init = tf.initialize_all_variables()
 
@@ -45,10 +46,13 @@ class Nnet(object):
 
     def test(self, data_gen):
         sum_avg_loss = 0
-        sum_accs = 0
         sum_frames = 0
-        start_time = time.time()
         count_steps = 0
+
+        sum_accs = 0
+        sum_acc_frames = 0
+
+        start_time = time.time()
 
         while(True):
 
@@ -57,19 +61,28 @@ class Nnet(object):
             if feed_dict is None:
                 break
 
-            loss, acc = self.sess.run([self.loss, self.eval_acc], feed_dict = feed_dict)
+            loss = self.sess.run(self.loss, feed_dict = feed_dict)
 
             sum_avg_loss += loss
-            sum_accs += acc
             sum_frames += data_gen.get_batch_size()
             count_steps += 1
 
-            if count_steps % 2000 == 0:
+            if count_steps % 1000 == 0:
+                acc = self.sess.run(self.eval_acc, feed_dict = feed_dict)
+                sum_accs += acc
+                sum_acc_frames += data_gen.get_batch_size()
                 print '%s frames processed' % sum_frames
 
         duration = time.time() - start_time
-        
-        print('Test: avg loss = %.6f, frame acc %.2f%%, on %d frames (%.2f sec passed, %.2f frames per sec)' % (sum_avg_loss / count_steps, 100.0 * sum_accs / sum_frames, sum_frames, duration, sum_frames / duration))
+
+        if count_steps == 0:
+            raise RuntimeError('nnet_trainer.test(): count_steps = 0')
+
+        data_gen.reset_batch()
+        avg_loss = sum_avg_loss / count_steps
+        print('Test: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek frame acc: %.2f%%' % (avg_loss, sum_frames, duration, sum_frames / duration, 100.0*sum_accs / sum_acc_frames))
+
+        return avg_loss
 
 
     def read(self, filename):
@@ -86,7 +99,7 @@ class Nnet(object):
         self.sess.run(self.init)
 
 
-    def train(self, train_gen):
+    def train(self, train_gen, learning_rate):
         '''Train one iteration'''
         sum_avg_loss = 0
         sum_accs = 0
@@ -94,7 +107,6 @@ class Nnet(object):
 
         sum_frames = 0
         sum_acc_frames = 0
-        count_acc = 0
 
         start_time = time.time()
         while(True):
@@ -103,6 +115,8 @@ class Nnet(object):
 
             if feed_dict is None:   # no more data for training
                 break
+
+            feed_dict.update({self.learning_rate_holder: learning_rate})
 
             _, loss = self.sess.run([self.train_op, self.loss], feed_dict = feed_dict)
 
@@ -115,9 +129,14 @@ class Nnet(object):
                 acc = self.sess.run(self.eval_acc, feed_dict = feed_dict)
                 sum_accs += acc
                 sum_acc_frames += train_gen.get_batch_size()
-                count_acc += 1
 
                 # Print status to stdout.
                 print('Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek frame acc: %.2f%%' % (count_steps, sum_avg_loss / count_steps, sum_frames, duration, sum_frames / duration, 100.0*acc/train_gen.get_batch_size()))
-            
-        print('Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek avg frame acc: %.2f%%' % (sum_avg_loss / count_steps, sum_frames, duration, sum_frames / duration, 100.0*sum_accs/sum_acc_frames))
+
+        train_gen.reset_batch()
+
+        avg_loss = sum_avg_loss / count_steps
+
+        print('Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek avg frame acc: %.2f%%' % (avg_loss, sum_frames, duration, sum_frames / duration, 100.0*sum_accs/sum_acc_frames))
+
+        return avg_loss
