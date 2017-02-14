@@ -2,11 +2,15 @@ import os
 import sys
 import shutil
 import datetime
+import logging
 from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import Nnet
 from dataGenerator import dataGenerator
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler(sys.stdout))
 
 #get number of output labels
 def readOutputFeatDim (gmm):
@@ -23,8 +27,7 @@ if __name__ != '__main__':
 if len(sys.argv) != 7:
     raise TypeError ('USAGE: train.py data_cv ali_cv data_tr ali_tr gmm_dir dnn_dir')
 
-print "### command line"
-print " ".join(sys.argv)
+logger.info("### command line: %s", " ".join(sys.argv))
 
 data_cv = sys.argv[1]
 ali_cv  = sys.argv[2]
@@ -39,6 +42,7 @@ config.read('config/swbd.cfg')
 
 # prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
+os.path.isdir(exp+'/log') or os.makedirs (exp+'/log')
 os.path.isdir(exp+'/nnet') or os.makedirs (exp+'/nnet')
 shutil.copyfile(gmm+'/tree', exp+'/tree')
 shutil.copyfile(gmm+'/final.mdl', exp+'/final.mdl')
@@ -59,11 +63,14 @@ mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):
     mlp_best = open(exp+'/.mlp_best').read()
+    logger.info("loading model from %s", mlp_best)
     nnet.read(mlp_best)
 elif os.path.isfile(mlp_init):
+    logger.info("loading model from %s", mlp_init)
     nnet.read(mlp_init)
     mlp_best = mlp_init
 else:
+    logger.info("initialize model to %s", mlp_init)
     nnet.write(mlp_init)
     mlp_best = mlp_init
 
@@ -76,7 +83,7 @@ halving_factor = config.getfloat('nnet', 'halving_factor')
 start_halving_impr = config.getfloat('nnet', 'start_halving_impr')
 end_halving_impr = config.getfloat('nnet', 'end_halving_impr')
 
-loss = nnet.test(cvGen)
+loss = nnet.test(exp+'/log/initial.log', cvGen)
 
 current_lr = initial_lr
 if os.path.isfile(exp+'/.learn_rate'):
@@ -86,16 +93,17 @@ if os.path.isfile(exp+'/.halving'):
 else:
     halving = False
 
-print '### neural net training started at ' + str(datetime.datetime.today())
+logger.info('### neural net training started at %s', datetime.datetime.today())
 for i in xrange(max_iters):
-    print "ITERATION %d: " % i,
+    log_info = "ITERATION %d:" % (i+1)
 
     if os.path.isfile(exp+'/.done_iter'+str(i+1)):
-        print "skipping... "
+        logger.info("%s skipping... ", log_info)
         continue
 
-    loss_tr = nnet.train(trGen, current_lr)
-    loss_new = nnet.test(cvGen)
+    loss_tr = nnet.train(exp+'/log/iter'+str(i+1)+'.tr.log', trGen, current_lr)
+    loss_new = nnet.test(exp+'/log/iter'+str(i+1)+'.cv.log', cvGen)
+
     loss_prev = loss
 
     mlp_current = "%s/nnet/model_iter%d_lr%f_tr%.3f_cv%.3f" % (exp, i+1, current_lr, loss_tr, loss_new)
@@ -105,12 +113,12 @@ for i in xrange(max_iters):
         loss = loss_new
         mlp_best = mlp_current
         nnet.write(mlp_best)
-        print "nnet accepted %s" % mlp_best.split('/')[-1]
+        logger.info("%s nnet accepted %s", log_info, mlp_best.split('/')[-1])
         open(exp + '/.mlp_best', 'w').write(mlp_best)
     else:
         mlp_rej = mlp_current + "_rejected"
         nnet.write(mlp_rej)
-        print "nnet rejected %s" % mlp_rej.split('/')[-1]
+        logger.info("%s nnet rejected %s", log_info, mlp_rej.split('/')[-1])
 
     open(exp + '/.done_iter.'+str(i+1), 'w').write("")
     
@@ -121,9 +129,9 @@ for i in xrange(max_iters):
     rel_impr = (loss_prev - loss) / loss_prev
     if halving and rel_impr < end_halving_impr:
         if i < min_iters:
-            print "we were supposed to finish, but we continue as min_iters: %d" % min_iters
+            logger.info("we were supposed to finish, but we continue as min_iters: %d", min_iters)
             continue
-        print "finished, too small rel. improvement %.3f" % rel_impr
+        logger.info("finished, too small rel. improvement %.3f", rel_impr)
         break
 
     if rel_impr < start_halving_impr:
@@ -136,5 +144,5 @@ for i in xrange(max_iters):
 
 # end of train loop
 
-print "Succeed training the neural network in " + exp + '/final.model'
-print '### training complete at ' + str(datetime.datetime.today())
+logger.info("Succeed training the neural network in %s/final.model", exp)
+logger.info("### training complete at %s", datetime.datetime.today())

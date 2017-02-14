@@ -4,6 +4,10 @@ import time
 import numpy as np
 import tensorflow as tf
 import nnet
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 class Nnet(object):
     '''a class for a neural network that can be used together with Kaldi'''
@@ -44,7 +48,11 @@ class Nnet(object):
         self.sess = tf.Session(graph=self.graph)
 
 
-    def test(self, data_gen):
+    def test(self, logfile, data_gen):
+
+        fh = logging.FileHandler(logfile, mode = 'w')
+        logger.addHandler(fh)
+
         sum_avg_loss = 0
         sum_frames = 0
         count_steps = 0
@@ -71,7 +79,7 @@ class Nnet(object):
                 acc = self.sess.run(self.eval_acc, feed_dict = feed_dict)
                 sum_accs += acc
                 sum_acc_frames += data_gen.get_batch_size()
-                print '%s frames processed' % sum_frames
+                logger.info("%s frames processed", sum_frames)
 
         duration = time.time() - start_time
 
@@ -80,27 +88,31 @@ class Nnet(object):
 
         data_gen.reset_batch()
         avg_loss = sum_avg_loss / count_steps
-        print('Test: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek frame acc: %.2f%%' % (avg_loss, sum_frames, duration, sum_frames / duration, 100.0*sum_accs / sum_acc_frames))
+        logger.info("Test: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek frame acc: %.2f%%", avg_loss, sum_frames, duration, sum_frames / duration, 100.0*sum_accs / sum_acc_frames)
+        
+        logger.removeHandler(fh)
 
         return avg_loss
 
 
     def read(self, filename):
-        print 'loading model from %s' % filename
         self.saver.restore(self.sess, filename)
 
 
     def write(self, filename):
         self.saver.save(self.sess, filename)
-        print 'model saved to %s' % filename
 
 
     def init_nnet(self):
         self.sess.run(self.init)
 
 
-    def train(self, train_gen, learning_rate):
+    def train(self, logfile, train_gen, learning_rate):
         '''Train one iteration'''
+
+        fh = logging.FileHandler(logfile, mode = 'w')
+        logger.addHandler(fh)
+
         sum_avg_loss = 0
         sum_accs = 0
         count_steps = 0
@@ -131,12 +143,14 @@ class Nnet(object):
                 sum_acc_frames += train_gen.get_batch_size()
 
                 # Print status to stdout.
-                print('Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek frame acc: %.2f%%' % (count_steps, sum_avg_loss / count_steps, sum_frames, duration, sum_frames / duration, 100.0*acc/train_gen.get_batch_size()))
+                logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek frame acc: %.2f%%", count_steps, sum_avg_loss / count_steps, sum_frames, duration, sum_frames / duration, 100.0*acc/train_gen.get_batch_size())
 
         train_gen.reset_batch()
 
         avg_loss = sum_avg_loss / count_steps
 
-        print('Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek avg frame acc: %.2f%%' % (avg_loss, sum_frames, duration, sum_frames / duration, 100.0*sum_accs/sum_acc_frames))
+        logger.info("Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek avg frame acc: %.2f%%", avg_loss, sum_frames, duration, sum_frames / duration, 100.0*sum_accs/sum_acc_frames)
+
+        logger.removeHandler(fh)
 
         return avg_loss
