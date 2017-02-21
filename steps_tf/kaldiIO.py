@@ -18,6 +18,7 @@ def readUtterance (ark):
     featMat = numpy.frombuffer(ark.read(rows * cols * 4), dtype=numpy.float32)
     return uttId.decode(), featMat.reshape((rows,cols))
 
+
 def writeUtterance (uttId, featMat, ark, encoding):
     featMat = numpy.asarray (featMat, dtype=numpy.float32)
     m,n = featMat.shape

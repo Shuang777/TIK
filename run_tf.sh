@@ -4,57 +4,59 @@
 set -e
 set -o pipefail
 
-nj=4
+nj=10
 stage=0
 single=true
 debug=false
+pdb=true
 . ./cmd.sh
 . ./path.sh
 . parse_options.sh
 
 ## Configurable directories
-#train=data/train_nodup
+train=data/train_nodup
 train=data/train_100k_nodup
+train=data/train_10ks
 train_ali=exp/tri4_ali_nodup
-train=data/train_debug
-train_ali=exp/tri4_ali_30kshort
+#train_ali=exp/tri4_ali_10ks
 
-if $debug; then
-  train=data/train_debug
-  train_ali=exp/tri4_ali_30kshort
-fi
-
-cv=data/train_dev_debug
+cv=data/train_dev
 cv_ali=exp/tri4_ali_dev
 
 lang=data/lang_sw1_tg
 gmm=exp/tri4
-exp=exp/tfdnn_5a
+#exp=exp/tfdnn_5a_10ks_sigmoid_2048x6
+exp=exp/tfdnn_5a_kaldi
 
+test=data/eval2000
 
-$debug && debug_args='-m pdb'
-if [ $stage -le 0 ]; then
-## Train
-python $debug_args steps_tf/run_tf.py $cv $cv_ali $train $train_ali $gmm $exp
-exit
+config=config/swbd.cfg
 
-## Get priors: Make a Python script to do this.
-ali-to-pdf $gmm/final.mdl ark:"gunzip -c ${gmm}_ali/ali.*.gz |" ark,t:- | \
-    cut -d" " -f2- | tr ' ' '\n' | sed -r '/^\s*$/d' | sort | uniq -c | sort -n -k2 | \
-    awk '{a[$2]=$1; c+=$1; LI=$2} END{for(i=0;i<LI;i++) printf "%e,",a[i]/c; printf "%e",a[LI]/c}' \
-    > $exp/dnn.priors.csv
+if $debug; then
+  train=data/train_debug
+  train_ali=exp/tri4_ali_30kshort
+  cv=data/train_dev_debug
+  cv_ali=exp/tri4_ali_dev
 
-$single && exit
-
+  exp=exp/tfdnn_5a_debug
 fi
 
-graph=$gmm/graph
 
+$debug && $pdb && debug_args='-m pdb'
 
+if [ $stage -le 0 ]; then
+## Train
+python3 $debug_args steps_tf/run_tf.py $config $cv $cv_ali $train $train_ali $gmm $exp
+
+$single && exit
+fi
+
+x="--use-gpu true --tc-args '-tc 4'"
 ## Decode
-teps_kt/decode.sh --nj $nj \
-    --add-deltas "true" --norm-vars "true" --splice-opts "--left-context=5 --right-context=5" \
-    $test $gmm/graph $exp $exp/decode
+if [ $stage -le 1 ]; then
+steps_tf/decode.sh --use-gpu true --tc-args '-tc 4' --nj $nj --cmd "$decode_cmd" \
+  $test $gmm/graph_sw1_tg $exp/decode_eval2000
+fi
 
 #### Align
 ##    [ -f ${exp}_ali ] || steps_kt/align.sh --nj $nj --cmd "$train_cmd" \

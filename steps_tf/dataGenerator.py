@@ -27,7 +27,7 @@ class dataGenerator:
         self.loop = loop    # keep looping over dataset
         self.maxSplitDataSize = 1000 ## These many utterances are loaded into memory at once.
 
-        self.tempDir = tempfile.mkdtemp(prefix='/data/exp/')
+        self.tempDir = tempfile.mkdtemp(prefix='/data/exp/tmp/')
         aliPdf = self.tempDir + '/alipdf.' + self.name + '.txt'
  
         ## Generate pdf indices
@@ -159,3 +159,13 @@ class dataGenerator:
 
     def reset_batch(self):
         self.splitDataCounter = 0
+
+    def save_target_counts(self, num_targets, output_file):
+        # here I'm assuming training data is less than 10,000 hours
+        counts = numpy.zeros(num_targets, dtype='int64')
+        for alignment in self.labels.values():
+            counts += numpy.bincount(alignment, minlength = num_targets)
+        # add a ``half-frame'' to all the elements to avoid zero-counts (decoding issue)
+        counts = counts.astype(float) + 0.5
+        numpy.savetxt(output_file, counts, fmt = '%.1f')
+

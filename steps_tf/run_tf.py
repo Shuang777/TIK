@@ -1,8 +1,12 @@
+#!/usr/bin/python3
+
 import os
 import sys
+import re
 import shutil
 import datetime
 import logging
+import fnmatch
 from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import Nnet
@@ -13,63 +17,92 @@ logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
 #get number of output labels
-def readOutputFeatDim (gmm):
-    p1 = Popen (['am-info', '%s/final.mdl' % gmm], stdout=PIPE)
-    modelInfo = p1.stdout.read().splitlines()
-    for line in modelInfo:
-        if b'number of pdfs' in line:
+def get_model_pdfs (gmm):
+    p1 = Popen (['hmm-info', '%s/final.mdl' % gmm], stdout=PIPE)
+    for line in p1.stdout.read().splitlines():
+        if 'pdfs' in str(line):
             return int(line.split()[-1])
 
+def match_iter_model(directory, model_base):
+    for file in os.listdir(directory):
+        if fnmatch.fnmatch(file, model_base+'*') and not file.endswith(".meta"):
+            return file
 
 if __name__ != '__main__':
     raise ImportError ('This script can only be run, and can\'t be imported')
 
-if len(sys.argv) != 7:
-    raise TypeError ('USAGE: train.py data_cv ali_cv data_tr ali_tr gmm_dir dnn_dir')
+if len(sys.argv) != 8:
+    raise TypeError ('USAGE: run_tf.py data_cv ali_cv data_tr ali_tr gmm_dir dnn_dir')
 
-logger.info("### command line: %s", " ".join(sys.argv))
-
-data_cv = sys.argv[1]
-ali_cv  = sys.argv[2]
-data_tr = sys.argv[3]
-ali_tr  = sys.argv[4]
-gmm     = sys.argv[5]
-exp     = sys.argv[6]
-
-# read config file
-config = configparser.ConfigParser()
-config.read('config/swbd.cfg')
+config_file = sys.argv[1]
+data_cv     = sys.argv[2]
+ali_cv      = sys.argv[3]
+data_tr     = sys.argv[4]
+ali_tr      = sys.argv[5]
+gmm         = sys.argv[6]
+exp         = sys.argv[7]
 
 # prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
 os.path.isdir(exp+'/log') or os.makedirs (exp+'/log')
 os.path.isdir(exp+'/nnet') or os.makedirs (exp+'/nnet')
-shutil.copyfile(gmm+'/tree', exp+'/tree')
-shutil.copyfile(gmm+'/final.mdl', exp+'/final.mdl')
-shutil.copyfile(gmm+'/final.mat', exp+'/final.mat')
 
-# get the feature input dim
-output_dim = readOutputFeatDim(gmm)
+# log to file
+logger.addHandler(logging.FileHandler(exp+'/log/train.log', mode = 'w'))
+logger.info("### command line: %s", " ".join(sys.argv))
+
+# copy necessary files
+shutil.copyfile(gmm+'/tree', exp+'/tree')
+shutil.copyfile(gmm+'/final.mat', exp+'/final.mat')
+shutil.copyfile(gmm+'/tree', exp+'/tree')
+Popen (['copy-transition-model', '--binary=false', gmm+'/final.mdl' ,exp+'/final.mdl']).communicate()
+
+# read config file
+config = configparser.ConfigParser()
+shutil.copyfile(config_file, exp+'/config')
+config.read(config_file)
 
 # prepare data
 trGen = dataGenerator (data_tr, ali_tr, ali_tr, exp, 'train', config.items('nnet'), shuffle=True)
 cvGen = dataGenerator (data_cv, ali_cv, ali_cv, exp, 'cv', config.items('nnet'))
-#cvGen = None
+
+
+# get the feature input dim
+input_dim = trGen.getFeatDim()
+output_dim = get_model_pdfs(gmm)
+
+# save alignment priors
+trGen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
+
+# save input_dim and output_dim
+open(exp+'/input_dim', 'w').write(str(input_dim))
+open(exp+'/output_dim', 'w').write(str(output_dim))
+
+# set gpu ID
+p1 = Popen ('pick-gpu', stdout=PIPE)
+gpu_id = int(p1.stdout.read())
+if gpu_id == -1:
+    raise RuntimeError("Unable to pick gpu")
+logger.info("Selecting gpu %d", gpu_id)
+os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
 # create the neural net
-nnet = Nnet(config.items('nnet'), trGen.getFeatDim(), output_dim)
-nnet.init_nnet()
+nnet_conf = config.items('nnet')
+optimizer_conf = config.items('optimizer')
+input_dim = trGen.getFeatDim()
+nnet = Nnet(nnet_conf, optimizer_conf, input_dim, output_dim)
 mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):
     mlp_best = open(exp+'/.mlp_best').read()
     logger.info("loading model from %s", mlp_best)
     nnet.read(mlp_best)
-elif os.path.isfile(mlp_init):
+elif os.path.isfile(mlp_init+'.index'):
     logger.info("loading model from %s", mlp_init)
     nnet.read(mlp_init)
     mlp_best = mlp_init
 else:
+    nnet.init_nnet()
     logger.info("initialize model to %s", mlp_init)
     nnet.write(mlp_init)
     mlp_best = mlp_init
@@ -83,8 +116,6 @@ halving_factor = config.getfloat('nnet', 'halving_factor')
 start_halving_impr = config.getfloat('nnet', 'start_halving_impr')
 end_halving_impr = config.getfloat('nnet', 'end_halving_impr')
 
-loss = nnet.test(exp+'/log/initial.log', cvGen)
-
 current_lr = initial_lr
 if os.path.isfile(exp+'/.learn_rate'):
     current_lr = float(open(exp+'/.learn_rate').read())
@@ -93,12 +124,19 @@ if os.path.isfile(exp+'/.halving'):
 else:
     halving = False
 
-logger.info('### neural net training started at %s', datetime.datetime.today())
-for i in xrange(max_iters):
+logger.info("### neural net training started at %s", datetime.datetime.today())
+
+loss = nnet.test(exp+'/log/initial.log', cvGen)
+logger.info("ITERATION 0: loss on cv %.3f", loss)
+
+for i in range(max_iters):
     log_info = "ITERATION %d:" % (i+1)
 
+    mlp_current_base = "model_iter%d" % (i+1)
+
     if os.path.isfile(exp+'/.done_iter'+str(i+1)):
-        logger.info("%s skipping... ", log_info)
+        iter_model = match_iter_model(exp+'/nnet', mlp_current_base)
+        logger.info("%s skipping... %s trained", log_info, iter_model)
         continue
 
     loss_tr = nnet.train(exp+'/log/iter'+str(i+1)+'.tr.log', trGen, current_lr)
@@ -106,7 +144,7 @@ for i in xrange(max_iters):
 
     loss_prev = loss
 
-    mlp_current = "%s/nnet/model_iter%d_lr%f_tr%.3f_cv%.3f" % (exp, i+1, current_lr, loss_tr, loss_new)
+    mlp_current = "%s/nnet/%s_lr%f_tr%.3f_cv%.3f" % (exp, mlp_current_base, current_lr, loss_tr, loss_new)
 
     if loss_new < loss or i < keep_lr_iters or i < min_iters:
         # accepting: the loss was better or we have fixed learn-rate
@@ -120,7 +158,7 @@ for i in xrange(max_iters):
         nnet.write(mlp_rej)
         logger.info("%s nnet rejected %s", log_info, mlp_rej.split('/')[-1])
 
-    open(exp + '/.done_iter.'+str(i+1), 'w').write("")
+    open(exp + '/.done_iter'+str(i+1), 'w').write("")
     
     if i < keep_lr_iters:
         continue
@@ -140,9 +178,17 @@ for i in xrange(max_iters):
 
     if halving:
         current_lr = current_lr * halving_factor
-        open(exp+'/.learn_rate', 'w').write(current_lr)
+        open(exp+'/.learn_rate', 'w').write(str(current_lr))
 
 # end of train loop
 
-logger.info("Succeed training the neural network in %s/final.model", exp)
-logger.info("### training complete at %s", datetime.datetime.today())
+if mlp_best != mlp_init:
+    open(exp+'/final.model.txt', 'w').write(mlp_best)
+    logger.info("Succeed training the neural network in %s", exp)
+    logger.info("### training complete at %s", datetime.datetime.today())
+else:
+    raise RuntimeError("Error training neural network...")
+
+
+# End
+
