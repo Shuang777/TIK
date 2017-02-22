@@ -7,8 +7,15 @@ def placeholder_inputs(input_dim, batch_size):
   return feats_holder, labels_holder
 
 
-def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_dim, nonlin = 'relu', init = '1/d'):
+def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_dim, 
+              nonlin = 'relu', init = '1/d', batch_norm = False):
+
+  # initial input for layer 1
   layer_in = feats_holder
+
+  # Small epsilon value for the batch normalization transform
+  epsilon = 1e-3
+
   for i in range(num_hidden_layers):
     with tf.name_scope('hidden'+str(i+1)):
       dim_in = input_dim if i == 0 else hidden_units
@@ -19,14 +26,26 @@ def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_d
                               name='weights')
       else:
         weights = tf.Variable(tf.truncated_normal([dim_in, dim_out], stddev=0.1), name='weights')
-      biases = tf.Variable(tf.zeros([dim_out]), name='biases')
+
+      if batch_norm:
+        z = tf.matmul(layer_in, weights)
+        batch_mean, batch_var = tf.nn.moments(z, [0])
+        scale = tf.Variable(tf.ones([dim_out]))
+        beta = tf.Variable(tf.zeros([dim_out]))
+        aff_out = tf.nn.batch_normalization(z, batch_mean, batch_var, beta, scale, epsilon)
+      else:
+        biases = tf.Variable(tf.zeros([dim_out]), name='biases')
+        aff_out = tf.matmul(layer_in, weights) + biases
+
       if nonlin == 'relu':
-        layer_out = tf.nn.relu(tf.matmul(layer_in, weights) + biases)
+        layer_out = tf.nn.relu(aff_out)
       elif nonlin == 'sigmoid':
-        layer_out = tf.sigmoid(tf.matmul(layer_in, weights) + biases)
+        layer_out = tf.sigmoid(aff_out)
       elif nonlin == 'tanh':
-        layer_out = tf.tanh(tf.matmul(layer_in, weights) + biases)
+        layer_out = tf.tanh(aff_out)
+
       layer_in = layer_out
+
   # Linear
   with tf.name_scope('softmax_linear'):
     if init == '1/d':

@@ -90,6 +90,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 nnet_conf = config.items('nnet')
 optimizer_conf = config.items('optimizer')
 input_dim = trGen.getFeatDim()
+
 nnet = Nnet(nnet_conf, optimizer_conf, input_dim, output_dim)
 mlp_init = exp+'/model.init'
 

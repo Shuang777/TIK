@@ -65,9 +65,12 @@ cmds="apply-cmvn --utt2spk=ark:$sdata/JOB/utt2spk scp:$sdata/JOB/cmvn.scp scp:$s
 cmds="$cmds splice-feats $splice_opts ark:- ark:- |"
 cmds="$cmds transform-feats $srcdir/final.mat ark:- ark:- |"
 if [ ! -z "$transform_dir" ]; then
-  cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$transform_dir/$trans.JOB ark:- ark:- |"
+  nj_orig=$(cat $transform_dir/num_jobs)
+  for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
+    copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
+  cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$dir/trans.ark ark:- ark:- |"
 fi
-cmds="$cmds python3 steps_tf/nnet_forward.py --use-gpu $use_gpu $srcdir/config $srcdir/final.model.txt $srcdir/ali_train_pdf.counts |"
+cmds="$cmds python3 steps_tf/nnet_forward.py --use-gpu $use_gpu --sleep JOB $srcdir/config $srcdir/final.model.txt $srcdir/ali_train_pdf.counts |"
 
 $cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
   $cmds latgen-faster-mapped --max-active=$max_active --beam=$beam --lattice-beam=$latbeam \

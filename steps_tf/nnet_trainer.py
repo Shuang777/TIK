@@ -32,14 +32,14 @@ class Nnet(object):
             self.feats_holder, self.labels_holder = nnet.placeholder_inputs(self.input_dim, self.batch_size)
             self.learning_rate_holder = tf.placeholder(tf.float32, shape=[])
 
-            if 'init_file' in self.conf and self.conf['init_file'] is not None:
+            if self.conf.get('init_file', None) is not None:
                 logits = nnet.inference_from_file(self.feats_holder, 
                         self.input_dim, self.output_dim, self.conf['init_file'])
             else:
                 logits = nnet.inference(self.feats_holder, self.input_dim, 
                         self.hidden_units, self.hidden_layers, 
                         self.output_dim, self.conf['nonlin'],
-                        self.conf['init'])
+                        self.conf['init'], self.conf.get('batch_norm', False))
 
             self.outputs = tf.nn.softmax(logits)
 

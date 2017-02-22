@@ -1,12 +1,10 @@
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, DEVNULL
 import tempfile
 import kaldiIO
 import pickle
 import shutil
 import numpy
 import os
-
-DEVNULL = open(os.devnull, 'w')
 
 ## Data generator class for Kaldi
 class dataGenerator:
@@ -67,6 +65,9 @@ class dataGenerator:
             'ark:-', 'ark,scp:'+ self.tempDir + '/shuffle.' + self.name + '.ark,' + exp + '/' + self.name + '.scp'], stdin=p3.stdout).communicate()
         p3.stdout.close()
 
+        if name == 'train':
+            Popen(['compute-cmvn-stats', 'scp:'+exp+'/'+self.name+'.scp', exp+'/cmvn.mat']).communicate()
+
         split_scp_cmd = 'utils/split_scp.pl ' + exp + '/' + self.name + '.scp'
         for i in range(self.numSplit):
             split_scp_cmd += ' ' + self.tempDir + '/split.' + self.name + '.' + str(i) + '.scp'
@@ -99,19 +100,24 @@ class dataGenerator:
     ## Return a batch to work on
     def getNextSplitData (self):
 #        p1 = Popen (['copy-feats', 'scp:' + self.tempDir.name + '/split.' + self.name + '.' + str(self.splitDataCounter) + '.scp', 'ark:-'], stdout=PIPE, stderr=DEVNULL)
-        p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), '--right-context='+str(self.splice), 'scp:' + self.tempDir + '/split.' + self.name + '.' + str(self.splitDataCounter) + '.scp', 'ark:-'], stdout=PIPE, stderr=DEVNULL)
+        p1 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat', 
+                     'scp:'+self.tempDir+'/split.'+self.name+'.'+str(self.splitDataCounter)+'.scp',
+                     'ark:-'], stdout=PIPE, stderr=DEVNULL)
+        p2 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), '--right-context='+str(self.splice), 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
         featList = []
         labelList = []
         while True:
-            uid, featMat = kaldiIO.readUtterance (p1.stdout)
+            uid, featMat = kaldiIO.readUtterance (p2.stdout)
             if uid == None:
                 # no more utterance, return
                 return (numpy.vstack(featList), numpy.hstack(labelList))
             if uid in self.labels:
                 featList.append (featMat)
                 labelList.append (self.labels[uid])
+        # read done
 
+        p1.stdout.close()
 
     def hasData(self):
     # has enough data for next batch
