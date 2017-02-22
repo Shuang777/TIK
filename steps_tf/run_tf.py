@@ -10,7 +10,7 @@ import fnmatch
 from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import Nnet
-from dataGenerator import dataGenerator
+from data_generator import DataGenerator
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -31,16 +31,14 @@ def match_iter_model(directory, model_base):
 if __name__ != '__main__':
     raise ImportError ('This script can only be run, and can\'t be imported')
 
-if len(sys.argv) != 8:
-    raise TypeError ('USAGE: run_tf.py data_cv ali_cv data_tr ali_tr gmm_dir dnn_dir')
+if len(sys.argv) != 6:
+    raise TypeError ('USAGE: run_tf.py data_tr ali_tr gmm_dir dnn_dir')
 
 config_file = sys.argv[1]
-data_cv     = sys.argv[2]
-ali_cv      = sys.argv[3]
-data_tr     = sys.argv[4]
-ali_tr      = sys.argv[5]
-gmm         = sys.argv[6]
-exp         = sys.argv[7]
+data        = sys.argv[2]
+ali_dir      = sys.argv[3]
+gmm         = sys.argv[4]
+exp         = sys.argv[5]
 
 # prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
@@ -63,16 +61,26 @@ shutil.copyfile(config_file, exp+'/config')
 config.read(config_file)
 
 # prepare data
-trGen = dataGenerator (data_tr, ali_tr, ali_tr, exp, 'train', config.items('nnet'), shuffle=True)
-cvGen = dataGenerator (data_cv, ali_cv, ali_cv, exp, 'cv', config.items('nnet'))
+Popen(['utils/subset_data_dir_tr_cv.sh', data, exp+'/tr90', exp+'/cv10']).communicate()
 
+## Generate pdf indices
+p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
+             'ark,t:-'], stdout=PIPE)
+ali_labels = {}
+for line in p1.stdout:
+  line = line.split()
+  utt = line[0].decode(sys.stdout.encoding)
+  ali_labels[utt] = [int(i) for i in line[1:]]
+
+tr_gen = DataGenerator (exp+'/tr90', ali_labels, ali_dir, exp, 'train', config.items('nnet'), shuffle=True)
+cv_gen = DataGenerator (exp+'/cv10', ali_labels, ali_dir, exp, 'cv', config.items('nnet'))
 
 # get the feature input dim
-input_dim = trGen.getFeatDim()
+input_dim = tr_gen.getFeatDim()
 output_dim = get_model_pdfs(gmm)
 
 # save alignment priors
-trGen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
+tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
 
 # save input_dim and output_dim
 open(exp+'/input_dim', 'w').write(str(input_dim))
@@ -89,7 +97,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 # create the neural net
 nnet_conf = config.items('nnet')
 optimizer_conf = config.items('optimizer')
-input_dim = trGen.getFeatDim()
+input_dim = tr_gen.getFeatDim()
 
 nnet = Nnet(nnet_conf, optimizer_conf, input_dim, output_dim)
 mlp_init = exp+'/model.init'
@@ -127,7 +135,7 @@ else:
 
 logger.info("### neural net training started at %s", datetime.datetime.today())
 
-loss = nnet.test(exp+'/log/initial.log', cvGen)
+loss = nnet.test(exp+'/log/initial.log', cv_gen)
 logger.info("ITERATION 0: loss on cv %.3f", loss)
 
 for i in range(max_iters):
@@ -140,8 +148,8 @@ for i in range(max_iters):
         logger.info("%s skipping... %s trained", log_info, iter_model)
         continue
 
-    loss_tr = nnet.train(exp+'/log/iter'+str(i+1)+'.tr.log', trGen, current_lr)
-    loss_new = nnet.test(exp+'/log/iter'+str(i+1)+'.cv.log', cvGen)
+    loss_tr = nnet.train(exp+'/log/iter'+str(i+1)+'.tr.log', tr_gen, current_lr)
+    loss_new = nnet.test(exp+'/log/iter'+str(i+1)+'.cv.log', cv_gen)
 
     loss_prev = loss
 

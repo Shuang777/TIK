@@ -70,7 +70,8 @@ signal (SIGPIPE, SIG_DFL)
 
 p1 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', srcdir+'/cmvn.mat', 
              'ark:-', 'ark:-'], stdin=ark_in, stdout=PIPE, stderr=DEVNULL)
-p2 = Popen(['splice-feats', '--print-args=false', '--left-context='+str(splice), '--right-context='+str(splice), 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE)
+p2 = Popen(['splice-feats', '--print-args=false', '--left-context='+str(splice), 
+            '--right-context='+str(splice), 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE)
 
 while True:
   uid, feats = kaldiIO.readUtterance(p2.stdout)
