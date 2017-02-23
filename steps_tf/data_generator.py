@@ -39,6 +39,7 @@ class DataGenerator:
       self.num_utts = sum(1 for line in f)
 
     cmd = "cat %s/feats.scp | utils/shuffle_list.pl --srand %d > %s/shuffle.%s.scp" % (data, seed, exp, self.name)
+#    cmd = "cp %s/feats.scp %s/shuffle.%s.scp" % (data, exp, self.name)
     Popen(cmd, shell=True).communicate()
 
     p1 = Popen (['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
@@ -55,7 +56,11 @@ class DataGenerator:
     p3.stdout.close()
 
     if name == 'train':
-      Popen(['compute-cmvn-stats', 'scp:'+exp+'/'+self.name+'.scp', exp+'/cmvn.mat']).communicate()
+      p1 = Popen (['splice-feats', '--left-context='+str(self.splice), '--right-context='+str(self.splice),
+                   'scp:head -10000 %s/%s.scp |' % (exp, self.name), 'ark:-'], 
+                   stdout=PIPE)
+      Popen(['compute-cmvn-stats', 'ark:-', exp+'/cmvn.mat'], stdin=p1.stdout).communicate()
+      p1.stdout.close()
 
     split_scp_cmd = 'utils/split_scp.pl ' + exp + '/' + self.name + '.scp'
     self.num_split = - (-self.num_utts // self.max_split_data_size)  # integer division
@@ -77,12 +82,12 @@ class DataGenerator:
 
   ## Return a batch to work on
   def get_next_split_data (self):
-      p1 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat', 
+      p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), 
+                   '--right-context='+str(self.splice), 
                    'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
                    'ark:-'], stdout=PIPE, stderr=DEVNULL)
-      p2 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), 
-                   '--right-context='+str(self.splice), 'ark:-', 'ark:-'], 
-                   stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
+      p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat', 
+                   'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
       feat_list = []
       label_list = []

@@ -2,7 +2,7 @@
 
 import os
 import sys
-import numpy
+import numpy as np
 import logging
 import kaldiIO
 import argparse
@@ -45,7 +45,6 @@ splice = config.getint('nnet','context_width')
 logger.info("use-gpu: %s", str(args.use_gpu))
 
 if args.use_gpu in [ 'yes', 'true', 'True']:
-  #sleep(args.sleep)
   p1 = Popen ('pick-gpu', stdout=PIPE)
   gpu_id = int(p1.stdout.read())
   if gpu_id == -1:
@@ -59,19 +58,19 @@ nnet = Nnet(config.items('nnet'), config.items('optimizer'), input_dim, output_d
 
 nnet.read(open(model_file, 'r').read())
 
-prior_counts = numpy.genfromtxt (prior_counts_file)
+prior_counts = np.genfromtxt (prior_counts_file)
 priors = prior_counts / prior_counts.sum()
+log_priors = np.log(priors)
 
 ark_in = sys.stdin.buffer
-#ark_in = open('stdin', 'r')
 ark_out = sys.stdout.buffer
 encoding = sys.stdout.encoding
 signal (SIGPIPE, SIG_DFL)
 
-p1 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', srcdir+'/cmvn.mat', 
-             'ark:-', 'ark:-'], stdin=ark_in, stdout=PIPE, stderr=DEVNULL)
-p2 = Popen(['splice-feats', '--print-args=false', '--left-context='+str(splice), 
-            '--right-context='+str(splice), 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE)
+p1 = Popen(['splice-feats', '--print-args=false', '--left-context='+str(splice), 
+            '--right-context='+str(splice), 'ark:-', 'ark:-'], stdin=ark_in, stdout=PIPE, stderr=DEVNULL)
+p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', srcdir+'/cmvn.mat', 
+             'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
 while True:
   uid, feats = kaldiIO.readUtterance(p2.stdout)
@@ -79,8 +78,8 @@ while True:
     # we are done
     break
 
-  posteriors = nnet.predict (feats)
-  logProbMat = numpy.log(posteriors / priors)
-  kaldiIO.writeUtterance(uid, logProbMat, ark_out, encoding)
+  log_post = nnet.predict (feats, take_log = False)
+  log_likes = log_post - log_priors
+  kaldiIO.writeUtterance(uid, log_likes, ark_out, encoding)
 
 p1.stdout.close

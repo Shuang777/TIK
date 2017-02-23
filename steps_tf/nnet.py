@@ -22,10 +22,10 @@ def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_d
       dim_out = hidden_units
       if init == '1/d':
         weights = tf.Variable(tf.truncated_normal([dim_in, dim_out], 
-                                stddev=1.0/math.sqrt(float(dim_in))), 
+                              mean=0.0, stddev=1.0/math.sqrt(float(dim_in))), 
                               name='weights')
       else:
-        weights = tf.Variable(tf.truncated_normal([dim_in, dim_out], stddev=0.1), name='weights')
+        weights = tf.Variable(tf.truncated_normal([dim_in, dim_out], mean=0.0, stddev=0.1), name='weights')
 
       if batch_norm:
         z = tf.matmul(layer_in, weights)

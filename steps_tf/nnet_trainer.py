@@ -41,9 +41,10 @@ class Nnet(object):
                         self.output_dim, self.conf['nonlin'],
                         self.conf['init'], self.conf.get('batch_norm', False))
 
-            self.outputs = tf.nn.softmax(logits)
+            self.logits = logits
+            self.outputs = tf.nn.softmax(self.logits)
 
-            self.loss = nnet.loss(logits, self.labels_holder)
+            self.loss = nnet.loss(self.logits, self.labels_holder)
 
             self.train_op = nnet.training(self.op_conf, self.loss, self.learning_rate_holder)
 
@@ -58,53 +59,6 @@ class Nnet(object):
         self.sess = tf.Session(graph=self.graph)
 
 
-    def test(self, logfile, data_gen):
-
-        fh = logging.FileHandler(logfile, mode = 'w')
-        logger.addHandler(fh)
-
-        sum_avg_loss = 0
-        sum_frames = 0
-        count_steps = 0
-
-        sum_accs = 0
-        sum_acc_frames = 0
-
-        start_time = time.time()
-
-        while(True):
-
-            feed_dict = data_gen.get_batch(self.feats_holder, self.labels_holder)
-
-            if feed_dict is None:
-                break
-
-            loss = self.sess.run(self.loss, feed_dict = feed_dict)
-
-            sum_avg_loss += loss
-            sum_frames += data_gen.get_batch_size()
-            count_steps += 1
-
-            if count_steps % 1000 == 0 or count_steps == 1:
-                acc = self.sess.run(self.eval_acc, feed_dict = feed_dict)
-                sum_accs += acc
-                sum_acc_frames += data_gen.get_batch_size()
-                logger.info("%s frames processed", sum_frames)
-
-        duration = time.time() - start_time
-
-        if count_steps == 0:
-            raise RuntimeError('nnet_trainer.test(): count_steps = 0')
-
-        data_gen.reset_batch()
-        avg_loss = sum_avg_loss / count_steps
-        logger.info("Test: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", avg_loss, sum_frames, duration, sum_frames / duration, 100.0*sum_accs / sum_acc_frames)
-        
-        logger.removeHandler(fh)
-
-        return avg_loss
-
-
     def read(self, filename):
         self.saver.restore(self.sess, filename)
 
@@ -117,8 +71,8 @@ class Nnet(object):
         self.sess.run(self.init)
 
 
-    def train(self, logfile, train_gen, learning_rate):
-        '''Train one iteration'''
+    def iter_data(self, logfile, train_gen, learning_rate = None, keep_acc = False):
+        '''Train/test one iteration; use learning_rate == None to specify test mode'''
 
         fh = logging.FileHandler(logfile, mode = 'w')
         logger.addHandler(fh)
@@ -140,30 +94,45 @@ class Nnet(object):
 
             feed_dict.update({self.learning_rate_holder: learning_rate})
 
-            _, loss = self.sess.run([self.train_op, self.loss], feed_dict = feed_dict)
+            if learning_rate is None:
+              loss = self.sess.run(self.loss, feed_dict = feed_dict)
+            else:
+              _, loss = self.sess.run([self.train_op, self.loss], feed_dict = feed_dict)
 
             sum_avg_loss += loss
             sum_frames += train_gen.get_batch_size()
             duration = time.time() - start_time
             count_steps += 1
 
-            if count_steps % 1000 == 0 or count_steps == 1:
+            if keep_acc or count_steps % 1000 == 0 or count_steps == 1:
                 acc = self.sess.run(self.eval_acc, feed_dict = feed_dict)
                 sum_accs += acc
                 sum_acc_frames += train_gen.get_batch_size()
 
                 # Print status to stdout.
-                logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", count_steps, sum_avg_loss / count_steps, sum_frames, duration, sum_frames / duration, 100.0*acc/train_gen.get_batch_size())
+                logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", 
+                    count_steps, sum_avg_loss / count_steps, 
+                    sum_frames, duration, sum_frames / duration, 
+                    100.0*acc/train_gen.get_batch_size())
 
+        # reset batch_generator because it might be used again
         train_gen.reset_batch()
 
         avg_loss = sum_avg_loss / count_steps
+        if sum_acc_frames == 0:
+            avg_acc = None
+            avg_acc_str = str(avg_acc)
+        else:
+            avg_acc = sum_accs/sum_acc_frames
+            avg_acc_str = "%.2f%%" % (100.0*avg_acc)
 
-        logger.info("Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", avg_loss, sum_frames, duration, sum_frames / duration, 100.0*sum_accs/sum_acc_frames)
+        logger.info("Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %s", 
+            avg_loss, sum_frames, duration, 
+            sum_frames / duration, avg_acc_str)
 
         logger.removeHandler(fh)
 
-        return avg_loss
+        return avg_loss, avg_acc_str
 
 
     def patch_to_batches(self, feats):
@@ -175,15 +144,19 @@ class Nnet(object):
         return feats_padded
         
 
-    def predict(self, feats):
+    def predict(self, feats, take_log = True):
         feats_padded = self.patch_to_batches(feats)
-        posteriors = []
+        posts = []
         for i in range(len(feats_padded) // self.batch_size):
             batch_start = i*self.batch_size
             batch_end = (i+1)*self.batch_size
             feed_dict = {self.feats_holder: feats_padded[batch_start:batch_end, :]}
-            batch_posteriors = self.sess.run(self.outputs, feed_dict=feed_dict)
-            posteriors.append(batch_posteriors)
+            if take_log:
+                batch_posts = self.sess.run(self.outputs, feed_dict=feed_dict)
+            else:
+                batch_posts = self.sess.run(self.logits, feed_dict=feed_dict)
+            posts.append(batch_posts)
 
-        posteriors = np.vstack(posteriors)
-        return posteriors[0:len(feats),:]
+        posts = np.vstack(posts)
+
+        return posts[0:len(feats),:]

@@ -15,20 +15,15 @@ pdb=true
 
 ## Configurable directories
 train=data/train_nodup
-train=data/train_100k_nodup
+#train=data/train_100k_nodup
 train=data/train_10ks
 train_ali=exp/tri4_ali_nodup
-#train_ali=exp/tri4_ali_10ks
-
-cv=data/train_dev
-cv_ali=exp/tri4_ali_dev
 
 lang=data/lang_sw1_tg
 gmm=exp/tri4
-#exp=exp/tfdnn_5a_10ks_sigmoid_2048x6
-exp=exp/tfdnn_5a_kaldi
-
-test=data/eval2000
+exp=exp/tfdnn_5a_sigmoid_2048x6
+exp=exp/tfdnn_5a_10ks_sigmoid_2048x6_mom0.9
+#exp=exp/tfdnn_5a_kaldi
 
 config=config/swbd.cfg
 
@@ -46,16 +41,18 @@ $debug && $pdb && debug_args='-m pdb'
 
 if [ $stage -le 0 ]; then
 ## Train
-python3 $debug_args steps_tf/run_tf.py $config $cv $cv_ali $train $train_ali $gmm $exp
+python3 $debug_args steps_tf/run_tf.py $config $train $train_ali $gmm $exp
 
 $single && exit
 fi
 
 x="--use-gpu true --tc-args '-tc 4'"
+name=eval2000
 ## Decode
 if [ $stage -le 1 ]; then
-steps_tf/decode.sh --use-gpu true --tc-args '-tc 4' --nj $nj --cmd "$decode_cmd" \
-  $test $gmm/graph_sw1_tg $exp/decode_eval2000
+steps_tf/decode.sh --nj $nj --cmd "$decode_cmd" \
+  --transform-dir exp/tri4/decode_${name}_sw1_tg \
+  data/$name $gmm/graph_sw1_tg $exp/decode_$name
 fi
 
 #### Align
