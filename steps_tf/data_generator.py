@@ -1,6 +1,6 @@
 from subprocess import Popen, PIPE, DEVNULL
 import tempfile
-import kaldiIO
+import kaldi_IO
 import pickle
 import shutil
 import numpy
@@ -91,12 +91,12 @@ class DataGenerator:
       feat_list = []
       label_list = []
       while True:
-        uid, featMat = kaldiIO.readUtterance (p2.stdout)
+        uid, feat = kaldi_IO.read_utterance (p2.stdout)
         if uid == None:
           # no more utterance, return
           return (numpy.vstack(feat_list), numpy.hstack(label_list))
         if uid in self.labels:
-          feat_list.append (featMat)
+          feat_list.append (feat)
           label_list.append (self.labels[uid])
       # read done
 

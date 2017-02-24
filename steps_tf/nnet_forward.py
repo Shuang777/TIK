@@ -4,7 +4,7 @@ import os
 import sys
 import numpy as np
 import logging
-import kaldiIO
+import kaldi_IO
 import argparse
 from time import sleep
 from subprocess import Popen, PIPE, DEVNULL
@@ -55,8 +55,10 @@ if args.use_gpu in [ 'yes', 'true', 'True']:
 else:
   os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
+logger.info("initializing the graph")
 nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, int(feature_conf['batch_size']))
 
+logger.info("loading the model %s", args.model_file)
 nnet.read(open(args.model_file, 'r').read())
 
 prior_counts = np.genfromtxt (args.prior_counts_file)
@@ -74,13 +76,13 @@ p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', srcdir+'/cm
              'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
 while True:
-  uid, feats = kaldiIO.readUtterance(p2.stdout)
+  uid, feats = kaldi_IO.read_utterance(p2.stdout)
   if uid == None:
     # we are done
     break
 
   log_post = nnet.predict (feats, take_log = False)
   log_likes = log_post - log_priors
-  kaldiIO.writeUtterance(uid, log_likes, ark_out, encoding)
+  kaldi_IO.write_utterance(uid, log_likes, ark_out, encoding)
 
 p1.stdout.close

@@ -4,6 +4,7 @@ import time
 import numpy as np
 import tensorflow as tf
 import nnet
+import math
 import logging
 
 logger = logging.getLogger(__name__)
@@ -150,12 +151,17 @@ class NNTrainer(object):
       
 
   def predict(self, feats, take_log = True):
-    feats_padded = self.patch_to_batches(feats)
     posts = []
-    for i in range(len(feats_padded) // self.batch_size):
+    for i in range(math.ceil(len(feats) / self.batch_size)):
       batch_start = i*self.batch_size
       batch_end = (i+1)*self.batch_size
-      feed_dict = {self.feats_holder: feats_padded[batch_start:batch_end, :]}
+      # we avoid copying feats, only patch the last batch
+      if len(feats) < batch_end:
+        feats_padded = self.patch_to_batches(feats[batch_start:,])
+        feed_dict = {self.feats_holder: feats_padded}
+      else:
+        feed_dict = {self.feats_holder: feats[batch_start:batch_end, :]}
+
       if take_log:
         batch_posts = self.sess.run(self.outputs, feed_dict=feed_dict)
       else:
