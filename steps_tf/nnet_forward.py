@@ -11,6 +11,7 @@ from subprocess import Popen, PIPE, DEVNULL
 from six.moves import configparser
 from signal import signal, SIGPIPE, SIG_DFL
 from nnet_trainer import NNTrainer
+import section_config
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -32,9 +33,9 @@ args = arg_parser.parse_args()
 config = configparser.ConfigParser()
 config.read(args.config_file)
 
-feature_conf = dict(config.items('feature'))
-nnet_conf = dict(config.items('nnet'))
-optimizer_conf = dict(config.items('optimizer'))
+feature_conf = section_config.parse(config.items('feature'))
+nnet_conf = section_config.parse(config.items('nnet'))
+optimizer_conf = section_config.parse(config.items('optimizer'))
 
 srcdir = os.path.dirname(args.model_file)
 
@@ -56,7 +57,7 @@ else:
   os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 logger.info("initializing the graph")
-nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, int(feature_conf['batch_size']))
+nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, feature_conf['batch_size'])
 
 logger.info("loading the model %s", args.model_file)
 nnet.read(open(args.model_file, 'r').read())

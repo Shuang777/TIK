@@ -11,6 +11,7 @@ from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import NNTrainer
 from data_generator import DataGenerator
+import section_config   # my own config parser after configparser
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -60,10 +61,10 @@ config = configparser.ConfigParser()
 shutil.copyfile(config_file, exp+'/config')
 config.read(config_file)
 
-nnet_conf = dict(config.items('nnet'))
-optimizer_conf = dict(config.items('optimizer'))
-scheduler_conf = dict(config.items('scheduler'))
-feature_conf = dict(config.items('feature'))
+nnet_conf = section_config.parse(config.items('nnet'))
+optimizer_conf = section_config.parse(config.items('optimizer'))
+scheduler_conf = section_config.parse(config.items('scheduler'))
+feature_conf = section_config.parse(config.items('feature'))
 
 # prepare data
 Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
@@ -102,10 +103,11 @@ os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 # create the neural net
 input_dim = tr_gen.getFeatDim()
 
-if 'init_file' in nnet_conf:
-  logger.info("Initializing graph using %s", nnet_conf['init_file'])
+if 'init_file' in scheduler_conf:
+  logger.info("Initializing graph using %s", scheduler_conf['init_file'])
 
-nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, int(feature_conf['batch_size']))
+nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, 
+                 feature_conf['batch_size'], init_file = scheduler_conf.get('init_file', None))
 nnet.init_nnet()
 mlp_init = exp+'/model.init'
 
@@ -123,13 +125,13 @@ else:
   mlp_best = mlp_init
 
 # get all variables for nnet training
-initial_lr = float(scheduler_conf.get('initial_learning_rate', 1.0))
-keep_lr_iters = int(scheduler_conf.get('keep_lr_iters', 0))
-min_iters = int(scheduler_conf.get('min_iters'))
-max_iters = int(scheduler_conf.get('max_iters'))
-halving_factor = float(scheduler_conf.get('halving_factor'))
-start_halving_impr = float(scheduler_conf.get('start_halving_impr'))
-end_halving_impr = float(scheduler_conf.get('end_halving_impr'))
+initial_lr = scheduler_conf.get('initial_learning_rate', 1.0)
+keep_lr_iters = scheduler_conf.get('keep_lr_iters', 0)
+min_iters = scheduler_conf.get('min_iters')
+max_iters = scheduler_conf.get('max_iters')
+halving_factor = scheduler_conf.get('halving_factor')
+start_halving_impr = scheduler_conf.get('start_halving_impr')
+end_halving_impr = scheduler_conf.get('end_halving_impr')
 
 current_lr = initial_lr
 if os.path.isfile(exp+'/.learn_rate'):

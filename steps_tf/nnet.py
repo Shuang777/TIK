@@ -26,8 +26,8 @@ def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_d
       if batch_norm:
         z = tf.matmul(layer_in, weights)
         batch_mean, batch_var = tf.nn.moments(z, [0])
-        scale = tf.Variable(tf.ones([dim_out]))
-        beta = tf.Variable(tf.zeros([dim_out]))
+        scale = tf.Variable(tf.ones([dim_out]), 'scale')
+        beta = tf.Variable(tf.zeros([dim_out]), 'beta')
         aff_out = tf.nn.batch_normalization(z, batch_mean, batch_var, beta, scale, epsilon)
       else:
         biases = tf.Variable(tf.zeros([dim_out]), name='biases')
@@ -116,13 +116,13 @@ def training(op_conf, loss, learning_rate_holder):
   ''' learning_rate is a place holder
   loss is output of logits
   '''
-  if op_conf['name'] in ['SGD', 'sgd']:
+  if op_conf['op_type'] in ['SGD', 'sgd']:
     op = tf.train.GradientDescentOptimizer(learning_rate = learning_rate_holder)
-  elif op_conf['name'] == 'momentum':
-    op = tf.train.MomentumOptimizer(learning_rate = learning_rate_holder, momentum = float(op_conf['momentum']))
-  elif op_conf['name'] in ['adagrad', 'Adagrad']:
+  elif op_conf['op_type'] == 'momentum':
+    op = tf.train.MomentumOptimizer(learning_rate = learning_rate_holder, momentum = op_conf['momentum'])
+  elif op_conf['op_type'] in ['adagrad', 'Adagrad']:
     op = tf.train.AdagradOptimizer(learning_rate = learning_rate_holder)
-  elif op_conf['name'] in ['adam', 'Adam']:
+  elif op_conf['op_type'] in ['adam', 'Adam']:
     op = tf.train.AdamOptimizer(learning_rate = learning_rate_holder)
   train_op = op.minimize(loss)
   return train_op

@@ -19,8 +19,8 @@ class DataGenerator:
     self.labels = labels
     self.exp = exp
     self.name = name
-    self.batch_size = int(conf.get('batch_size', 256))
-    self.splice = int(conf.get('context_width', 5))
+    self.batch_size = conf.get('batch_size', 256)
+    self.splice = conf.get('context_width', 5)
     self.loop = loop    # keep looping over dataset
     self.max_split_data_size = 1000 ## These many utterances are loaded into memory at once.
 

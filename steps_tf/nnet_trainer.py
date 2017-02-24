@@ -13,7 +13,7 @@ logger.setLevel(logging.INFO)
 class NNTrainer(object):
   '''a class for a neural network that can be used together with Kaldi'''
 
-  def __init__(self, nnet_conf, optimizer_conf, input_dim, output_dim, batch_size, seed=777):
+  def __init__(self, nnet_conf, optimizer_conf, input_dim, output_dim, batch_size, seed=777, init_file = None):
 
     # save a copy
     self.nnet_conf = nnet_conf
@@ -33,13 +33,13 @@ class NNTrainer(object):
 
       self.learning_rate_holder = tf.placeholder(tf.float32, shape=[])
 
-      if 'init_file' in self.nnet_conf:
+      if init_file is not None:
         logits = nnet.inference_from_file(self.feats_holder, self.input_dim, 
-                        self.output_dim, self.nnet_conf['init_file'])
+                        self.output_dim, init_file)
       else:
         logits = nnet.inference(self.feats_holder, self.input_dim, 
-                      int(nnet_conf.get('hidden_units', 1024)),
-                      int(nnet_conf.get('num_hidden_layers', 2)), 
+                      nnet_conf.get('hidden_units', 1024),
+                      nnet_conf.get('num_hidden_layers', 2), 
                       self.output_dim, self.nnet_conf['nonlin'],
                       self.nnet_conf.get('batch_norm', False))
 
