@@ -9,31 +9,30 @@ import logging
 import fnmatch
 from six.moves import configparser
 from subprocess import Popen, PIPE
-from nnet_trainer import Nnet
+from nnet_trainer import NNTrainer
 from data_generator import DataGenerator
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
-logger.addHandler(logging.StreamHandler(sys.stderr))
 
 #get number of output labels
 def get_model_pdfs (gmm):
-    p1 = Popen (['hmm-info', '%s/final.mdl' % gmm], stdout=PIPE)
-    for line in p1.stdout.read().splitlines():
-        if 'pdfs' in str(line):
-            return int(line.split()[-1])
+  p1 = Popen (['hmm-info', '%s/final.mdl' % gmm], stdout=PIPE)
+  for line in p1.stdout.read().splitlines():
+    if 'pdfs' in str(line):
+      return int(line.split()[-1])
 
 def match_iter_model(directory, model_base):
-    for file in os.listdir(directory):
-        if fnmatch.fnmatch(file, model_base+'*') and not file.endswith(".meta"):
-            return file
+  for file in os.listdir(directory):
+    if fnmatch.fnmatch(file, model_base+'*') and not file.endswith(".meta"):
+      return file
 
 if __name__ != '__main__':
-    raise ImportError ('This script can only be run, and can\'t be imported')
+  raise ImportError ('This script can only be run, and can\'t be imported')
 
 if len(sys.argv) != 6:
-    raise TypeError ('USAGE: run_tf.py data_tr ali_tr gmm_dir dnn_dir')
+  raise TypeError ('USAGE: run_tf.py data_tr ali_tr gmm_dir dnn_dir')
 
 config_file = sys.argv[1]
 data        = sys.argv[2]
@@ -61,6 +60,11 @@ config = configparser.ConfigParser()
 shutil.copyfile(config_file, exp+'/config')
 config.read(config_file)
 
+nnet_conf = dict(config.items('nnet'))
+optimizer_conf = dict(config.items('optimizer'))
+scheduler_conf = dict(config.items('scheduler'))
+feature_conf = dict(config.items('feature'))
+
 # prepare data
 Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
@@ -73,8 +77,8 @@ for line in p1.stdout:
   utt = line[0].decode(sys.stdout.encoding)
   ali_labels[utt] = [int(i) for i in line[1:]]
 
-tr_gen = DataGenerator (exp+'/tr90', ali_labels, ali_dir, exp, 'train', config.items('nnet'), shuffle=True)
-cv_gen = DataGenerator (exp+'/cv10', ali_labels, ali_dir, exp, 'cv', config.items('nnet'))
+tr_gen = DataGenerator (exp+'/tr90', ali_labels, ali_dir, exp, 'train', feature_conf, shuffle=True)
+cv_gen = DataGenerator (exp+'/cv10', ali_labels, ali_dir, exp, 'cv', feature_conf)
 
 # get the feature input dim
 input_dim = tr_gen.getFeatDim()
@@ -96,15 +100,9 @@ logger.info("Selecting gpu %d", gpu_id)
 os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
 # create the neural net
-nnet_conf = config.items('nnet')
-optimizer_conf = config.items('optimizer')
 input_dim = tr_gen.getFeatDim()
 
-init_file = dict(nnet_conf).get('init_file', None)
-if init_file is not None:
-  logger.info("Init model from %s", init_file)
-
-nnet = Nnet(nnet_conf, optimizer_conf, input_dim, output_dim)
+nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, int(feature_conf['batch_size']))
 nnet.init_nnet()
 mlp_init = exp+'/model.init'
 
@@ -122,13 +120,13 @@ else:
   mlp_best = mlp_init
 
 # get all variables for nnet training
-initial_lr = config.getfloat('nnet', 'initial_learning_rate')
-keep_lr_iters = config.getint('nnet', 'keep_lr_iters')
-min_iters = config.getint('nnet', 'min_iters')
-max_iters = config.getint('nnet', 'max_iters')
-halving_factor = config.getfloat('nnet', 'halving_factor')
-start_halving_impr = config.getfloat('nnet', 'start_halving_impr')
-end_halving_impr = config.getfloat('nnet', 'end_halving_impr')
+initial_lr = float(scheduler_conf.get('initial_learning_rate', 1.0))
+keep_lr_iters = int(scheduler_conf.get('keep_lr_iters', 0))
+min_iters = int(scheduler_conf.get('min_iters'))
+max_iters = int(scheduler_conf.get('max_iters'))
+halving_factor = float(scheduler_conf.get('halving_factor'))
+start_halving_impr = float(scheduler_conf.get('start_halving_impr'))
+end_halving_impr = float(scheduler_conf.get('end_halving_impr'))
 
 current_lr = initial_lr
 if os.path.isfile(exp+'/.learn_rate'):

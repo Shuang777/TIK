@@ -10,7 +10,7 @@ from time import sleep
 from subprocess import Popen, PIPE, DEVNULL
 from six.moves import configparser
 from signal import signal, SIGPIPE, SIG_DFL
-from nnet_trainer import Nnet
+from nnet_trainer import NNTrainer
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -29,17 +29,18 @@ arg_parser.add_argument('model_file', type = str)
 arg_parser.add_argument('prior_counts_file', type = str)
 args = arg_parser.parse_args()
 
-config_file = args.config_file
-model_file  = args.model_file
-prior_counts_file  = args.prior_counts_file
-
 config = configparser.ConfigParser()
-config.read(config_file)
-srcdir = os.path.dirname(model_file)
+config.read(args.config_file)
+
+feature_conf = dict(config.items('feature'))
+nnet_conf = dict(config.items('nnet'))
+optimizer_conf = dict(config.items('optimizer'))
+
+srcdir = os.path.dirname(args.model_file)
 
 input_dim = int(open(srcdir+'/input_dim').read())
 output_dim = int(open(srcdir+'/output_dim').read())
-splice = config.getint('nnet','context_width')
+splice = feature_conf['context_width']
 
 # set gpu
 logger.info("use-gpu: %s", str(args.use_gpu))
@@ -54,11 +55,11 @@ if args.use_gpu in [ 'yes', 'true', 'True']:
 else:
   os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-nnet = Nnet(config.items('nnet'), config.items('optimizer'), input_dim, output_dim)
+nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, int(feature_conf['batch_size']))
 
-nnet.read(open(model_file, 'r').read())
+nnet.read(open(args.model_file, 'r').read())
 
-prior_counts = np.genfromtxt (prior_counts_file)
+prior_counts = np.genfromtxt (args.prior_counts_file)
 priors = prior_counts / prior_counts.sum()
 log_priors = np.log(priors)
 

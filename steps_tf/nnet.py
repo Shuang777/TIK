@@ -8,7 +8,7 @@ def placeholder_inputs(input_dim, batch_size):
 
 
 def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_dim, 
-              nonlin = 'relu', init = '1/d', batch_norm = False):
+              nonlin = 'relu', batch_norm = False):
 
   # initial input for layer 1
   layer_in = feats_holder
@@ -20,12 +20,8 @@ def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_d
     with tf.name_scope('hidden'+str(i+1)):
       dim_in = input_dim if i == 0 else hidden_units
       dim_out = hidden_units
-      if init == '1/d':
-        weights = tf.Variable(tf.truncated_normal([dim_in, dim_out], 
-                              mean=0.0, stddev=1.0/math.sqrt(float(dim_in))), 
-                              name='weights')
-      else:
-        weights = tf.Variable(tf.truncated_normal([dim_in, dim_out], mean=0.0, stddev=0.1), name='weights')
+
+      weights = tf.Variable(tf.truncated_normal([dim_in, dim_out], mean=0.0, stddev=0.1), name='weights')
 
       if batch_norm:
         z = tf.matmul(layer_in, weights)
@@ -48,12 +44,7 @@ def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_d
 
   # Linear
   with tf.name_scope('softmax_linear'):
-    if init == '1/d':
-      weights = tf.Variable(tf.truncated_normal([hidden_units, output_dim], 
-                              stddev=1.0/math.sqrt(float(hidden_units))), 
-                            name='weights')
-    else: 
-      weights = tf.Variable(tf.truncated_normal([hidden_units, output_dim], stddev=0.1), name='weights')
+    weights = tf.Variable(tf.truncated_normal([hidden_units, output_dim], stddev=0.1), name='weights')
     biases = tf.Variable(tf.zeros([output_dim]), name='biases')
     logits = tf.matmul(layer_in, weights) + biases
   return logits

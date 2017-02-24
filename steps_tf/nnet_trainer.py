@@ -9,44 +9,47 @@ import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-class Nnet(object):
+class NNTrainer(object):
     '''a class for a neural network that can be used together with Kaldi'''
 
-    def __init__(self, conf, op_conf, input_dim, output_dim, seed=777):
-
-        #get nnet structure configs
-        self.conf = dict(conf)
-        self.op_conf = dict(op_conf)
+    def __init__(self, nnet_conf, optimizer_conf, input_dim, output_dim, batch_size, seed=777):
+  
+        # save a copy
+        self.nnet_conf = nnet_conf
+        self.optimizer_conf = optimizer_conf
 
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.hidden_units = int(self.conf['hidden_units'])
-        self.hidden_layers = int(self.conf['num_hidden_layers'])
-        self.batch_size = int(self.conf['batch_size'])
+        self.batch_size = batch_size
 
         self.graph = tf.Graph()
+
         with self.graph.as_default():
 
             tf.set_random_seed(seed)
 
             self.feats_holder, self.labels_holder = nnet.placeholder_inputs(self.input_dim, self.batch_size)
+
             self.learning_rate_holder = tf.placeholder(tf.float32, shape=[])
 
-            if self.conf.get('init_file', None) is not None:
-                logits = nnet.inference_from_file(self.feats_holder, 
-                        self.input_dim, self.output_dim, self.conf['init_file'])
+            if 'init_file' in self.nnet_conf:
+                logging.info("Initializing graph using %s", self.nnet_conf['init_file'])
+                logits = nnet.inference_from_file(self.feats_holder, self.input_dim, 
+                              self.output_dim, self.nnet_conf['init_file'])
             else:
                 logits = nnet.inference(self.feats_holder, self.input_dim, 
-                        self.hidden_units, self.hidden_layers, 
-                        self.output_dim, self.conf['nonlin'],
-                        self.conf['init'], self.conf.get('batch_norm', False))
+                              int(nnet_conf.get('hidden_units', 1024)),
+                              int(nnet_conf.get('num_hidden_layers', 2)), 
+                              self.output_dim, self.nnet_conf['nonlin'],
+                              self.nnet_conf.get('batch_norm', False))
 
             self.logits = logits
+
             self.outputs = tf.nn.softmax(self.logits)
 
             self.loss = nnet.loss(self.logits, self.labels_holder)
 
-            self.train_op = nnet.training(self.op_conf, self.loss, self.learning_rate_holder)
+            self.train_op = nnet.training(optimizer_conf, self.loss, self.learning_rate_holder)
 
             self.init = tf.global_variables_initializer()
 
@@ -73,6 +76,8 @@ class Nnet(object):
 
     def iter_data(self, logfile, train_gen, learning_rate = None, keep_acc = False):
         '''Train/test one iteration; use learning_rate == None to specify test mode'''
+
+        assert self.batch_size == train_gen.get_batch_size()
 
         fh = logging.FileHandler(logfile, mode = 'w')
         logger.addHandler(fh)
