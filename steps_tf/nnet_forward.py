@@ -17,7 +17,7 @@ logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stderr))
 
 if __name__ != '__main__':
-    raise ImportError ('This script can only be run, and can\'t be imported')
+  raise ImportError ('This script can only be run, and can\'t be imported')
 
 logger.info(" ".join(sys.argv))
 

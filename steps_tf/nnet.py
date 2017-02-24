@@ -75,8 +75,8 @@ def inference_from_file(feats_holder, input_dim, output_dim, init_file):
           line = line.strip(']').strip()
         mat.append(list(map(float, line.split())))
         line = nnet.readline().strip()
+
       w = list(zip(*mat))
-      
       b = list(map(float, line.split()[1:-1]))
       
       line = nnet.readline()

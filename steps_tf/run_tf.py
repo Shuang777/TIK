@@ -102,6 +102,9 @@ os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 # create the neural net
 input_dim = tr_gen.getFeatDim()
 
+if 'init_file' in nnet_conf:
+  logger.info("Initializing graph using %s", nnet_conf['init_file'])
+
 nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, int(feature_conf['batch_size']))
 nnet.init_nnet()
 mlp_init = exp+'/model.init'
@@ -110,7 +113,7 @@ if os.path.isfile(exp+'/.mlp_best'):
   mlp_best = open(exp+'/.mlp_best').read()
   logger.info("loading model from %s", mlp_best)
   nnet.read(mlp_best)
-elif os.path.isfile(mlp_init+'.index') and init_file is not None:
+elif os.path.isfile(mlp_init+'.index') and 'init_file' not in nnet_conf:
   logger.info("loading model from %s", mlp_init)
   nnet.read(mlp_init)
   mlp_best = mlp_init
@@ -144,9 +147,9 @@ logger.info("ITERATION 0: loss on cv %.3f, acc_cv %s", loss, acc)
 for i in range(max_iters):
   log_info = "ITERATION %d:" % (i+1)
 
-  mlp_current_base = "model_iter%d" % (i+1)
+  mlp_current_base = "model_iter%02d" % (i+1)
 
-  if os.path.isfile(exp+'/.done_iter'+str(i+1)):
+  if os.path.isfile(exp+'/.done_iter%02d'%(i+1)):
     iter_model = match_iter_model(exp+'/nnet', mlp_current_base)
     logger.info("%s skipping... %s trained", log_info, iter_model)
     continue
