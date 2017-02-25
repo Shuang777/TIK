@@ -57,10 +57,11 @@ else:
   os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 logger.info("initializing the graph")
-nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, feature_conf['batch_size'])
+nnet = NNTrainer(input_dim, output_dim, feature_conf['batch_size'])
 
 logger.info("loading the model %s", args.model_file)
-nnet.read(open(args.model_file, 'r').read())
+model_name=open(args.model_file, 'r').read()
+nnet.read(model_name)
 
 prior_counts = np.genfromtxt (args.prior_counts_file)
 priors = prior_counts / prior_counts.sum()

@@ -2,8 +2,8 @@ import tensorflow as tf
 import math
 
 def placeholder_inputs(input_dim, batch_size):
-  feats_holder = tf.placeholder(tf.float32, shape=(batch_size, input_dim))
-  labels_holder = tf.placeholder(tf.int32, shape=(batch_size))
+  feats_holder = tf.placeholder(tf.float32, shape=(batch_size, input_dim), name='feature')
+  labels_holder = tf.placeholder(tf.int32, shape=(batch_size), name='target')
   return feats_holder, labels_holder
 
 
@@ -46,7 +46,7 @@ def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_d
   with tf.name_scope('softmax_linear'):
     weights = tf.Variable(tf.truncated_normal([hidden_units, output_dim], stddev=0.1), name='weights')
     biases = tf.Variable(tf.zeros([output_dim]), name='biases')
-    logits = tf.matmul(layer_in, weights) + biases
+    logits = tf.add(tf.matmul(layer_in, weights), biases, name='logits')
   return logits
 
 
@@ -92,7 +92,7 @@ def inference_from_file(feats_holder, input_dim, output_dim, init_file):
         with tf.name_scope('softmax_linear'):
           weights = tf.Variable(w, name='weights')
           biases = tf.Variable(b, name='biases')
-          logits = tf.matmul(layer_in, weights) + biases
+          logits = tf.add(tf.matmul(layer_in, weights), biases, name = 'logits')
 
       line = nnet.readline()
       assert line.startswith('<!EndOfComponent>')

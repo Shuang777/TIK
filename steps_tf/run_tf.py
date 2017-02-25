@@ -106,9 +106,7 @@ input_dim = tr_gen.getFeatDim()
 if 'init_file' in scheduler_conf:
   logger.info("Initializing graph using %s", scheduler_conf['init_file'])
 
-nnet = NNTrainer(nnet_conf, optimizer_conf, input_dim, output_dim, 
-                 feature_conf['batch_size'], init_file = scheduler_conf.get('init_file', None))
-nnet.init_nnet()
+nnet = NNTrainer(input_dim, output_dim, feature_conf['batch_size'])
 mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):
@@ -120,9 +118,12 @@ elif os.path.isfile(mlp_init+'.index') and 'init_file' not in nnet_conf:
   nnet.read(mlp_init)
   mlp_best = mlp_init
 else:
+  nnet.init_nnet(nnet_conf, init_file = scheduler_conf.get('init_file', None))
   logger.info("initialize model to %s", mlp_init)
   nnet.write(mlp_init)
   mlp_best = mlp_init
+
+nnet.init_training(optimizer_conf)
 
 # get all variables for nnet training
 initial_lr = scheduler_conf.get('initial_learning_rate', 1.0)

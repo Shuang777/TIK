@@ -11,67 +11,97 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 class NNTrainer(object):
-  '''a class for a neural network that can be used together with Kaldi'''
+  '''
+  a class for a neural network that can be used together with Kaldi.
+  session is initialized either by read() or by init_nnet().
+  '''
 
-  def __init__(self, nnet_conf, optimizer_conf, input_dim, output_dim, batch_size, seed=777, init_file = None):
-
-    # save a copy
-    self.nnet_conf = nnet_conf
-    self.optimizer_conf = optimizer_conf
-
+  def __init__(self, input_dim, output_dim, batch_size):
+    ''' just some basic config for this trainer '''
     self.input_dim = input_dim
     self.output_dim = output_dim
     self.batch_size = batch_size
+    self.sess = None
 
+  def __exit__ (self):
+    if self.sess is not None:
+      self.sess.close()
+
+
+  def read(self, filename):
+    ''' read graph from file '''
+    self.graph = tf.Graph()
+    with self.graph.as_default():
+      self.saver = tf.train.import_meta_graph(filename+'.meta')
+    
+    assert self.sess == None
+    self.sess = tf.Session(graph=self.graph)
+    with self.graph.as_default():
+      self.saver.restore(self.sess, filename)
+      
+    self.logits = self.graph.get_collection('logits')[0]
+    self.outputs = self.graph.get_collection('outputs')[0]
+    self.feats_holder = self.graph.get_collection('feats_holder')[0]
+    self.labels_holder = self.graph.get_collection('labels_holder')[0]
+
+
+  def write(self, filename):
+    with self.graph.as_default():
+      save_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+      saver = tf.train.Saver(save_list, max_to_keep=20)
+      saver.save(self.sess, filename)
+
+
+  def init_nnet(self, nnet_conf, seed=777, init_file = None):
+    ''' initializing nnet from file or config (graph creation) '''
     self.graph = tf.Graph()
 
     with self.graph.as_default():
-
-      tf.set_random_seed(seed)
-
-      self.feats_holder, self.labels_holder = nnet.placeholder_inputs(self.input_dim, self.batch_size)
-
-      self.learning_rate_holder = tf.placeholder(tf.float32, shape=[])
+      feats_holder, labels_holder = nnet.placeholder_inputs(self.input_dim, self.batch_size)
 
       if init_file is not None:
         logits = nnet.inference_from_file(self.feats_holder, self.input_dim, 
                         self.output_dim, init_file)
       else:
-        logits = nnet.inference(self.feats_holder, self.input_dim, 
+        logits = nnet.inference(feats_holder, self.input_dim, 
                       nnet_conf.get('hidden_units', 1024),
                       nnet_conf.get('num_hidden_layers', 2), 
-                      self.output_dim, self.nnet_conf['nonlin'],
-                      self.nnet_conf.get('batch_norm', False))
+                      self.output_dim, nnet_conf['nonlin'],
+                      nnet_conf.get('batch_norm', False))
 
-      self.logits = logits
+      outputs = tf.nn.softmax(logits)
+      init_all_op = tf.global_variables_initializer()
 
-      self.outputs = tf.nn.softmax(self.logits)
-
-      self.loss = nnet.loss(self.logits, self.labels_holder)
-
-      self.train_op = nnet.training(optimizer_conf, self.loss, self.learning_rate_holder)
-
-      self.init = tf.global_variables_initializer()
-
-      self.eval_acc = nnet.evaluation(logits, self.labels_holder)
-
-      save_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
-
-      self.saver = tf.train.Saver(save_list, max_to_keep=20)
-
+      tf.add_to_collection('logits', logits)
+      tf.add_to_collection('outputs', outputs)
+      tf.add_to_collection('feats_holder', feats_holder)
+      tf.add_to_collection('labels_holder', labels_holder)
+    
+    assert self.sess == None
     self.sess = tf.Session(graph=self.graph)
+    tf.set_random_seed(seed)
+    self.sess.run(init_all_op)
+
+    self.logits = logits
+    self.outputs = outputs
+    self.feats_holder = feats_holder
+    self.labels_holder = labels_holder
 
 
-  def read(self, filename):
-      self.saver.restore(self.sess, filename)
+  def init_training(self, optimizer_conf):
+    ''' initialze training graph; 
+    assumes self.logits, self.labels_holder in place'''
+    with self.graph.as_default():
 
+      loss = nnet.loss(self.logits, self.labels_holder)
+      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
+      train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
+      eval_acc = nnet.evaluation(self.logits, self.labels_holder)
 
-  def write(self, filename) :
-      return self.saver.save(self.sess, filename)
-
-
-  def init_nnet(self):
-      self.sess.run(self.init)
+    self.loss = loss
+    self.learning_rate_holder = learning_rate_holder
+    self.train_op = train_op
+    self.eval_acc = eval_acc
 
 
   def iter_data(self, logfile, train_gen, learning_rate = None, keep_acc = False):
