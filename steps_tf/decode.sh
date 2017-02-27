@@ -7,7 +7,6 @@ set -o pipefail
 stage=0
 nj=10
 tc_args=
-use_gpu=false
 cmd=run.pl
 
 srcdir=
@@ -70,7 +69,7 @@ if [ ! -z "$transform_dir" ]; then
     copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
   cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$dir/trans.ark ark:- ark:- |"
 fi
-cmds="$cmds python3 steps_tf/nnet_forward.py --use-gpu $use_gpu $srcdir/config $srcdir/final.model.txt $srcdir/ali_train_pdf.counts |"
+cmds="$cmds python3 steps_tf/nnet_forward.py $srcdir/config $srcdir/final.model.txt $srcdir/ali_train_pdf.counts |"
 
 $cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
   $cmds latgen-faster-mapped --max-active=$max_active --beam=$beam --lattice-beam=$latbeam \

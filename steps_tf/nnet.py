@@ -1,5 +1,6 @@
 import tensorflow as tf
 import math
+import layer
 
 def placeholder_inputs(input_dim, batch_size):
   feats_holder = tf.placeholder(tf.float32, shape=(batch_size, input_dim), name='feature')
@@ -7,47 +8,45 @@ def placeholder_inputs(input_dim, batch_size):
   return feats_holder, labels_holder
 
 
-def inference(feats_holder, input_dim, hidden_units, num_hidden_layers, output_dim, 
-              nonlin = 'relu', batch_norm = False):
-
-  # initial input for layer 1
-  layer_in = feats_holder
-
+def inference(feats_holder, nnet_proto_file):
   # Small epsilon value for the batch normalization transform
   epsilon = 1e-3
-
-  for i in range(num_hidden_layers):
-    with tf.name_scope('hidden'+str(i+1)):
-      dim_in = input_dim if i == 0 else hidden_units
-      dim_out = hidden_units
-
-      weights = tf.Variable(tf.truncated_normal([dim_in, dim_out], mean=0.0, stddev=0.1), name='weights')
-
-      if batch_norm:
-        z = tf.matmul(layer_in, weights)
-        batch_mean, batch_var = tf.nn.moments(z, [0])
-        scale = tf.Variable(tf.ones([dim_out]), 'scale')
-        beta = tf.Variable(tf.zeros([dim_out]), 'beta')
-        aff_out = tf.nn.batch_normalization(z, batch_mean, batch_var, beta, scale, epsilon)
-      else:
-        biases = tf.Variable(tf.zeros([dim_out]), name='biases')
-        aff_out = tf.matmul(layer_in, weights) + biases
-
-      if nonlin == 'relu':
-        layer_out = tf.nn.relu(aff_out)
-      elif nonlin == 'sigmoid':
-        layer_out = tf.sigmoid(aff_out)
-      elif nonlin == 'tanh':
-        layer_out = tf.tanh(aff_out)
-
+  
+  nnet_proto = open(nnet_proto_file, 'r')
+  line = nnet_proto.readline().strip()
+  assert line == '<NnetProto>'
+  layer_in = feats_holder
+  count_layer = 1
+  for line in nnet_proto:
+    line = line.strip()
+    if line == '</NnetProto>':
+      break
+    with tf.name_scope('layer'+str(count_layer)):
+      layer_out = build_layer(line, layer_in)
       layer_in = layer_out
-
-  # Linear
-  with tf.name_scope('softmax_linear'):
-    weights = tf.Variable(tf.truncated_normal([hidden_units, output_dim], stddev=0.1), name='weights')
-    biases = tf.Variable(tf.zeros([output_dim]), name='biases')
-    logits = tf.add(tf.matmul(layer_in, weights), biases, name='logits')
+      count_layer += 1
+  logits = layer_out
   return logits
+
+
+def build_layer(line, layer_in):
+  layer_type, info = line.split(' ', 1)
+  if layer_type == '<AffineTransform>':
+    layer_out = layer.affine_transform(info, layer_in)
+  if layer_type == '<LinearTransform>':
+    layer_out = layer.linear_transform(info, layer_in)
+  elif layer_type == '<BatchNormalization>':
+    layer_out = layer.batch_normalization(info, layer_in)
+  elif layer_type == '<Sigmoid>':
+    layer_out = tf.sigmoid(layer_in)
+  elif layer_type == '<Relu>':
+    layer_out = tf.nn.relu(layer_in)
+  elif layer_type == '<Tanh>':
+    layer_out = tf.tanh(layer_in)
+  elif layer_type == '<Softmax>':
+    layer_out = tf.nn.softmax(layer_in)
+
+  return layer_out
 
 
 def inference_from_file(feats_holder, input_dim, output_dim, init_file):

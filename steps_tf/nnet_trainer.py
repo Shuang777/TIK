@@ -3,6 +3,7 @@ import os
 import time
 import numpy as np
 import tensorflow as tf
+from subprocess import Popen,PIPE
 import nnet
 import math
 import logging
@@ -16,12 +17,14 @@ class NNTrainer(object):
   session is initialized either by read() or by init_nnet().
   '''
 
-  def __init__(self, input_dim, output_dim, batch_size):
+  def __init__(self, input_dim, output_dim, batch_size, use_gpu = True):
     ''' just some basic config for this trainer '''
     self.input_dim = input_dim
     self.output_dim = output_dim
     self.batch_size = batch_size
     self.sess = None
+    self.use_gpu = use_gpu
+
 
   def __exit__ (self):
     if self.sess is not None:
@@ -35,6 +38,7 @@ class NNTrainer(object):
       self.saver = tf.train.import_meta_graph(filename+'.meta')
     
     assert self.sess == None
+    self.set_gpu()
     self.sess = tf.Session(graph=self.graph)
     with self.graph.as_default():
       self.saver.restore(self.sess, filename)
@@ -52,7 +56,19 @@ class NNTrainer(object):
       saver.save(self.sess, filename)
 
 
-  def init_nnet(self, nnet_conf, seed=777, init_file = None):
+  def set_gpu(self):
+    if self.use_gpu:
+      p1 = Popen ('pick-gpu', stdout=PIPE)
+      gpu_id = int(p1.stdout.read())
+      if gpu_id == -1:
+        raise RuntimeError("Unable to pick gpu")
+      logging.info("Selecting gpu %d", gpu_id)
+      os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+    else:
+      os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
+
+  def init_nnet(self, nnet_proto_file, seed=777, init_file = None):
     ''' initializing nnet from file or config (graph creation) '''
     self.graph = tf.Graph()
 
@@ -63,11 +79,7 @@ class NNTrainer(object):
         logits = nnet.inference_from_file(self.feats_holder, self.input_dim, 
                         self.output_dim, init_file)
       else:
-        logits = nnet.inference(feats_holder, self.input_dim, 
-                      nnet_conf.get('hidden_units', 1024),
-                      nnet_conf.get('num_hidden_layers', 2), 
-                      self.output_dim, nnet_conf['nonlin'],
-                      nnet_conf.get('batch_norm', False))
+        logits = nnet.inference(feats_holder, nnet_proto_file)
 
       outputs = tf.nn.softmax(logits)
       init_all_op = tf.global_variables_initializer()
@@ -78,6 +90,7 @@ class NNTrainer(object):
       tf.add_to_collection('labels_holder', labels_holder)
     
     assert self.sess == None
+    self.set_gpu()
     self.sess = tf.Session(graph=self.graph)
     tf.set_random_seed(seed)
     self.sess.run(init_all_op)
@@ -93,10 +106,17 @@ class NNTrainer(object):
     assumes self.logits, self.labels_holder in place'''
     with self.graph.as_default():
 
+      temp_vars = set(tf.global_variables())
       loss = nnet.loss(self.logits, self.labels_holder)
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
       train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
       eval_acc = nnet.evaluation(self.logits, self.labels_holder)
+#      init_train_op = tf.variables_initializer(set(tf.global_variables()) - temp_vars)
+      if len(set(tf.global_variables()) - temp_vars) != 0:
+        # now we need to initialze all variables for 
+        init_train_op = tf.global_variables_initializer()
+        assert self.sess is not None
+        self.sess.run(init_train_op)
 
     self.loss = loss
     self.learning_rate_holder = learning_rate_holder

@@ -11,6 +11,7 @@ from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import NNTrainer
 from data_generator import DataGenerator
+from make_nnet_proto import make_nnet_proto
 import section_config   # my own config parser after configparser
 
 logger = logging.getLogger(__name__)
@@ -92,17 +93,6 @@ tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
 open(exp+'/input_dim', 'w').write(str(input_dim))
 open(exp+'/output_dim', 'w').write(str(output_dim))
 
-# set gpu ID
-p1 = Popen ('pick-gpu', stdout=PIPE)
-gpu_id = int(p1.stdout.read())
-if gpu_id == -1:
-  raise RuntimeError("Unable to pick gpu")
-logger.info("Selecting gpu %d", gpu_id)
-os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-
-# create the neural net
-input_dim = tr_gen.getFeatDim()
-
 if 'init_file' in scheduler_conf:
   logger.info("Initializing graph using %s", scheduler_conf['init_file'])
 
@@ -118,7 +108,9 @@ elif os.path.isfile(mlp_init+'.index') and 'init_file' not in nnet_conf:
   nnet.read(mlp_init)
   mlp_best = mlp_init
 else:
-  nnet.init_nnet(nnet_conf, init_file = scheduler_conf.get('init_file', None))
+  nnet_proto_file = exp+'/nnet.proto'
+  make_nnet_proto(input_dim, output_dim, nnet_conf, nnet_proto_file)
+  nnet.init_nnet(nnet_proto_file, init_file = scheduler_conf.get('init_file', None))
   logger.info("initialize model to %s", mlp_init)
   nnet.write(mlp_init)
   mlp_best = mlp_init
@@ -144,7 +136,7 @@ else:
 
 logger.info("### neural net training started at %s", datetime.datetime.today())
 
-loss, acc = nnet.iter_data(exp+'/log/initial.log', cv_gen, keep_acc = True)
+loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, keep_acc = True)
 logger.info("ITERATION 0: loss on cv %.3f, acc_cv %s", loss, acc)
 
 for i in range(max_iters):

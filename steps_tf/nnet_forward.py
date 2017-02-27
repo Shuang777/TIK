@@ -46,18 +46,8 @@ splice = feature_conf['context_width']
 # set gpu
 logger.info("use-gpu: %s", str(args.use_gpu))
 
-if args.use_gpu in [ 'yes', 'true', 'True']:
-  p1 = Popen ('pick-gpu', stdout=PIPE)
-  gpu_id = int(p1.stdout.read())
-  if gpu_id == -1:
-    raise RuntimeError("Unable to pick gpu")
-  logger.info("Selecting gpu %d", gpu_id)
-  os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-else:
-  os.environ['CUDA_VISIBLE_DEVICES'] = ''
-
 logger.info("initializing the graph")
-nnet = NNTrainer(input_dim, output_dim, feature_conf['batch_size'])
+nnet = NNTrainer(input_dim, output_dim, feature_conf['batch_size'], use_gpu = False)
 
 logger.info("loading the model %s", args.model_file)
 model_name=open(args.model_file, 'r').read()
