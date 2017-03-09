@@ -49,15 +49,21 @@ logger.info("use-gpu: %s", str(args.use_gpu))
 logger.info("initializing the graph")
 nnet = NNTrainer(input_dim, output_dim, feature_conf['batch_size'], use_gpu = False)
 
+if os.path.exists(srcdir + '/multi.count'):
+  num_multi = int(open(srcdir + '/multi.count').read())
+else:
+  num_multi = 0
+
 logger.info("loading the model %s", args.model_file)
 model_name=open(args.model_file, 'r').read()
-nnet.read(model_name)
+nnet.read(model_name, num_multi = num_multi)
 
 prior_counts = np.genfromtxt (args.prior_counts_file)
 priors = prior_counts / prior_counts.sum()
 log_priors = np.log(priors)
 
 ark_in = sys.stdin.buffer
+#ark_in = open('stdin','r')
 ark_out = sys.stdout.buffer
 encoding = sys.stdout.encoding
 signal (SIGPIPE, SIG_DFL)

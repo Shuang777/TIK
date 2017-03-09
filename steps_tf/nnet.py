@@ -2,15 +2,19 @@ import tensorflow as tf
 import math
 import layer
 
-def placeholder_inputs(input_dim, batch_size):
-  feats_holder = tf.placeholder(tf.float32, shape=(batch_size, input_dim), name='feature')
+def placeholder_inputs(input_dim, batch_size, multi_subnnet = 1):
+  if multi_subnnet == 0:
+    feats_holder = tf.placeholder(tf.float32, shape=(batch_size, input_dim), name='feature')
+  else:
+    feats_holder = []
+    for i in range(multi_subnnet):
+      feats_holder.append(tf.placeholder(tf.float32, shape=(batch_size, input_dim), name='feature'+str(i)))
+
   labels_holder = tf.placeholder(tf.int32, shape=(batch_size), name='target')
   return feats_holder, labels_holder
 
 
 def inference(feats_holder, nnet_proto_file):
-  # Small epsilon value for the batch normalization transform
-  epsilon = 1e-3
   
   nnet_proto = open(nnet_proto_file, 'r')
   line = nnet_proto.readline().strip()
@@ -23,6 +27,70 @@ def inference(feats_holder, nnet_proto_file):
       break
     with tf.name_scope('layer'+str(count_layer)):
       layer_out = build_layer(line, layer_in)
+      layer_in = layer_out
+      count_layer += 1
+  logits = layer_out
+  return logits
+
+
+def scan_subnnet(nnet_proto_file):
+  nnet_proto = open(nnet_proto_file, 'r')
+  count_subnnet = 0
+  for line in nnet_proto:
+    line = line.strip()
+    if line == '<SubNnet>':
+      count_subnnet += 1
+  return count_subnnet
+
+
+def inference_multi(feats_holders, switch_holders, nnet_proto_file):
+  nnet_proto = open(nnet_proto_file, 'r')
+  line = nnet_proto.readline().strip()
+  assert line == '<NnetProto>'
+  line = nnet_proto.readline().strip()
+  assert line == '<MultiSwitch>'
+  count_subnnet = 0
+
+  # subnnet part
+  line = nnet_proto.readline().strip()
+  subnnet_outs = []
+  while line:
+    if line == '<SubNnet>':
+      layer_in = feats_holders[count_subnnet]
+      line = nnet_proto.readline().strip()
+      with tf.name_scope('layer0_sub'+str(count_subnnet)):
+        while line:
+          layer_out = build_layer(line, layer_in)
+          layer_in = layer_out
+          line = nnet_proto.readline().strip()
+          if line == '</SubNnet>':
+            subnnet_outs.append(layer_out)
+            break
+    if line == '</SubNnet>':
+      count_subnnet += 1
+    elif line == '</MultiSwitch>':
+    #done with subnnet part
+      break;
+    line = nnet_proto.readline().strip()
+
+  # merge part
+  with tf.name_scope('layer_merge'):
+    for i in range(count_subnnet):
+      if i == 0:
+        layer_out = tf.scalar_mul(switch_holders[0], subnnet_outs[0])
+      else:
+        layer_out = tf.add(layer_out, tf.scalar_mul(switch_holders[i], subnnet_outs[i]))
+  
+  # shared hidden part
+  count_layer = 1
+  layer_in = layer_out
+  with tf.name_scope('layer_shared'):
+    for line in nnet_proto:
+      line = line.strip()
+      if line == '</NnetProto>':
+        break
+      with tf.name_scope('layer'+str(count_layer)):
+        layer_out = build_layer(line, layer_in)
       layer_in = layer_out
       count_layer += 1
   logits = layer_out
@@ -111,7 +179,7 @@ def loss(logits, labels):
   return loss
 
 
-def training(op_conf, loss, learning_rate_holder):
+def training(op_conf, loss, learning_rate_holder, scopes = None):
   ''' learning_rate is a place holder
   loss is output of logits
   '''
@@ -123,7 +191,13 @@ def training(op_conf, loss, learning_rate_holder):
     op = tf.train.AdagradOptimizer(learning_rate = learning_rate_holder)
   elif op_conf['op_type'] in ['adam', 'Adam']:
     op = tf.train.AdamOptimizer(learning_rate = learning_rate_holder)
-  train_op = op.minimize(loss)
+  if scopes == None:
+    train_op = op.minimize(loss)
+  else:
+    train_vars = []
+    for scope in scopes:
+      train_vars += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
+    train_op = op.minimize(loss, var_list = train_vars)
   return train_op
 
 

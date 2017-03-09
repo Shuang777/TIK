@@ -32,6 +32,9 @@ def affine_transform(info, layer_in):
 
 
 def batch_normalization(info, layer_in):
+  # Small epsilon value for the batch normalization transform
+  epsilon = 1e-3
+
   info_dict = info2dict(info)
   
   input_dim = int(info_dict['<InputDim>'])

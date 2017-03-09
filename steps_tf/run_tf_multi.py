@@ -30,17 +30,30 @@ def match_iter_model(directory, model_base):
     if fnmatch.fnmatch(file, model_base+'*') and not file.endswith(".meta"):
       return file
 
+def get_ali_labels(ali_dir):
+  p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
+               'ark,t:-'], stdout=PIPE)
+  ali_labels = {}
+  for line in p1.stdout:
+    line = line.split()
+    utt = line[0].decode(sys.stdout.encoding)
+    ali_labels[utt] = [int(i) for i in line[1:]]
+  return ali_labels
+
+
 if __name__ != '__main__':
   raise ImportError ('This script can only be run, and can\'t be imported')
 
-if len(sys.argv) != 6:
+if len(sys.argv) != 8:
   raise TypeError ('USAGE: run_tf.py data_tr ali_tr gmm_dir dnn_dir')
 
 config_file = sys.argv[1]
 data        = sys.argv[2]
 ali_dir     = sys.argv[3]
-gmm         = sys.argv[4]
-exp         = sys.argv[5]
+aux_data    = sys.argv[4]
+aux_ali     = sys.argv[5]
+gmm         = sys.argv[6]
+exp         = sys.argv[7]
 
 # prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
@@ -74,16 +87,11 @@ summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
 Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
 ## Generate pdf indices
-p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
-             'ark,t:-'], stdout=PIPE)
-ali_labels = {}
-for line in p1.stdout:
-  line = line.split()
-  utt = line[0].decode(sys.stdout.encoding)
-  ali_labels[utt] = [int(i) for i in line[1:]]
-
+ali_labels = get_ali_labels(ali_dir)
+aux_labels = get_ali_labels(aux_ali)
 tr_gen = DataGenerator (exp+'/tr90', ali_labels, ali_dir, exp, 'train', feature_conf, shuffle=True)
 cv_gen = DataGenerator (exp+'/cv10', ali_labels, ali_dir, exp, 'cv', feature_conf)
+aux_gen = DataGenerator (aux_data, aux_labels, aux_ali, exp, 'aux', feature_conf, shuffle=True, loop = True)
 
 # get the feature input dim
 input_dim = tr_gen.getFeatDim()
@@ -103,12 +111,14 @@ nnet = NNTrainer(input_dim, output_dim, feature_conf['batch_size'], summary_dir 
 mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):
+  num_multi = int(open(exp+'/multi.count').read())
   mlp_best = open(exp+'/.mlp_best').read()
   logger.info("loading model from %s", mlp_best)
-  nnet.read(mlp_best)
+  nnet.read(mlp_best, num_multi = num_multi)
 elif os.path.isfile(mlp_init+'.index') and 'init_file' not in nnet_conf:
+  num_multi = int(open(exp+'/multi.count').read())
   logger.info("loading model from %s", mlp_init)
-  nnet.read(mlp_init)
+  nnet.read(mlp_init, num_multi = num_multi)
   mlp_best = mlp_init
 else:
   if nnet_proto_file is None:
@@ -117,6 +127,8 @@ else:
   else:
     shutil.copyfile(nnet_proto_file, exp+'/nnet.proto')
   nnet.init_nnet(nnet_proto_file, init_file = scheduler_conf.get('init_file', None))
+  num_multi = nnet.get_num_subnnets()
+  open(exp+'/multi.count', 'w').write(str(num_multi))
   logger.info("initialize model to %s", mlp_init)
   nnet.write(mlp_init)
   mlp_best = mlp_init
@@ -142,7 +154,7 @@ else:
 
 logger.info("### neural net training started at %s", datetime.datetime.today())
 
-loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, keep_acc = True)
+loss, acc = nnet.iter_multi_cv(exp+'/log/iter00.cv.log', cv_gen, keep_acc = True)
 logger.info("ITERATION 0: loss on cv %.3f, acc_cv %s", loss, acc)
 
 for i in range(max_iters):
@@ -155,8 +167,8 @@ for i in range(max_iters):
     logger.info("%s skipping... %s trained", log_info, iter_model)
     continue
 
-  loss_tr, acc_tr = nnet.iter_data(exp+'/log/iter%02d.tr.log'%(i+1), tr_gen, learning_rate = current_lr)
-  loss_cv, acc_cv = nnet.iter_data(exp+'/log/iter%02d.cv.log'%(i+1), cv_gen, keep_acc = True)
+  loss_tr, acc_tr = nnet.iter_multi_data(exp+'/log/iter%02d.tr.log'%(i+1), tr_gen, aux_gen, learning_rate = current_lr)
+  loss_cv, acc_cv = nnet.iter_multi_cv(exp+'/log/iter%02d.cv.log'%(i+1), cv_gen, keep_acc = True)
 
   loss_prev = loss
 

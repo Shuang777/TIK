@@ -46,7 +46,6 @@ python3 $debug_args steps_tf/run_tf.py $config $train $train_ali $gmm $exp
 $single && exit
 fi
 
-x="--use-gpu true --tc-args '-tc 4'"
 name=eval2000
 ## Decode
 if [ $stage -le 1 ]; then

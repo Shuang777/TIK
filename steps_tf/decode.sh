@@ -23,6 +23,8 @@ splice_opts=
 norm_vars=
 add_deltas=
 
+utt_mode=false
+
 # End configuration
 
 echo "$0 $@"  # Print the command line for logging
@@ -49,7 +51,15 @@ dir=$3
 sdata=$data/split$nj;
 
 mkdir -p $dir/log
-[[ -d $sdata && $data/feats.scp -ot $sdata ]] || split_data.sh $data $nj
+
+if $utt_mode; then
+  sdata=$data/split${nj}utt
+fi
+
+$utt_mode && utt_opts='--per-utt'
+
+[[ -d $sdata && $data/feats.scp -ot $sdata ]] || split_data.sh $utt_opts $data $nj
+
 echo $nj > $dir/num_jobs
 
 # Some checks.  Note: we don't need $srcdir/tree but we expect
@@ -65,9 +75,13 @@ cmds="$cmds splice-feats $splice_opts ark:- ark:- |"
 cmds="$cmds transform-feats $srcdir/final.mat ark:- ark:- |"
 if [ ! -z "$transform_dir" ]; then
   nj_orig=$(cat $transform_dir/num_jobs)
-  for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
-    copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
-  cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$dir/trans.ark ark:- ark:- |"
+  if [ $nj_orig != $nj ]; then
+    for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
+      copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
+    cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$dir/trans.ark ark:- ark:- |"
+  else
+    cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$transform_dir/trans.JOB ark:- ark:- |"
+  fi
 fi
 cmds="$cmds python3 steps_tf/nnet_forward.py $srcdir/config $srcdir/final.model.txt $srcdir/ali_train_pdf.counts |"
 
@@ -78,9 +92,14 @@ $cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
 fi
 
 if ! $skip_scoring ; then
-  [ ! -x local/score.sh ] && \
-    echo "$0: not scoring because local/score.sh does not exist or not executable." && exit 1;
-  mylocal/score.sh $scoring_opts --cmd "$cmd" $data $graphdir $dir
+  if [ -x mylocal/score.sh ]; then
+    mylocal/score.sh $scoring_opts --cmd "$cmd" $data $graphdir $dir
+  elif [ -x local/score.sh ]; then
+    local/score.sh $scoring_opts --cmd "$cmd" $data $graphdir $dir
+  else
+    echo "Not scoring because neither mylocal/score.sh nor local/score.sh exists"
+    exit 1
+  fi
 fi
 
 exit 0;

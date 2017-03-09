@@ -72,35 +72,35 @@ class DataGenerator:
 
   
   def getFeatDim(self):
-      return self.featDim
+    return self.featDim
 
 
   def __exit__ (self):
-      shutil.rmtree(self.temp_dir)
+    shutil.rmtree(self.temp_dir)
   
 
   ## Return a batch to work on
   def get_next_split_data (self):
-      p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), 
-                   '--right-context='+str(self.splice), 
-                   'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
-                   'ark:-'], stdout=PIPE, stderr=DEVNULL)
-      p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat', 
-                   'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
+    p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), 
+                 '--right-context='+str(self.splice), 
+                 'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
+                 'ark:-'], stdout=PIPE, stderr=DEVNULL)
+    p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat', 
+                 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
-      feat_list = []
-      label_list = []
-      while True:
-        uid, feat = kaldi_IO.read_utterance (p2.stdout)
-        if uid == None:
-          # no more utterance, return
-          return (numpy.vstack(feat_list), numpy.hstack(label_list))
-        if uid in self.labels:
-          feat_list.append (feat)
-          label_list.append (self.labels[uid])
-      # read done
+    feat_list = []
+    label_list = []
+    while True:
+      uid, feat = kaldi_IO.read_utterance (p2.stdout)
+      if uid == None:
+        # no more utterance, return
+        return (numpy.vstack(feat_list), numpy.hstack(label_list))
+      if uid in self.labels:
+        feat_list.append (feat)
+        label_list.append (self.labels[uid])
+    # read done
 
-      p1.stdout.close()
+    p1.stdout.close()
 
 
   def hasData(self):
@@ -113,12 +113,12 @@ class DataGenerator:
       
           
   ## Retrive a mini batch
-  def get_batch (self, feats_pl, labels_pl):
+  def get_batch (self):
     # read split data until we have enough for this batch
     while (self.batch_pointer + self.batch_size >= len (self.x)):
       if not self.loop and self.split_data_counter == self.num_split:
         # not loop mode and we arrive the end, do not read anymore
-        return None
+        return None, None
 
       x,y = self.get_next_split_data()
       self.x = numpy.concatenate ((self.x[self.batch_pointer:], x))
@@ -138,11 +138,7 @@ class DataGenerator:
     x_mini = self.x[self.batch_pointer:self.batch_pointer+self.batch_size]
     y_mini = self.y[self.batch_pointer:self.batch_pointer+self.batch_size]
     self.batch_pointer += self.batch_size
-    feed_dict = {
-        feats_pl: x_mini, 
-        labels_pl: y_mini
-    }
-    return feed_dict
+    return x_mini, y_mini
 
 
   def get_batch_size(self):
