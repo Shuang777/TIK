@@ -73,7 +73,7 @@ summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
 # prepare data
 Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
-## Generate pdf indices
+# Generate pdf indices
 p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
              'ark,t:-'], stdout=PIPE)
 ali_labels = {}
@@ -86,7 +86,7 @@ tr_gen = DataGenerator (exp+'/tr90', ali_labels, ali_dir, exp, 'train', feature_
 cv_gen = DataGenerator (exp+'/cv10', ali_labels, ali_dir, exp, 'cv', feature_conf)
 
 # get the feature input dim
-input_dim = tr_gen.getFeatDim()
+input_dim = tr_gen.get_feat_dim()
 output_dim = get_model_pdfs(gmm)
 
 # save alignment priors

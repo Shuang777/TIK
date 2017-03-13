@@ -202,7 +202,8 @@ class NNTrainer(object):
         sum_acc_frames += train_gen.get_batch_size()
 
         # Print status to stdout.
-        logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", 
+        if count_steps % 1000 == 0:
+          logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", 
                     count_steps, sum_avg_loss / count_steps, 
                     sum_frames, duration, sum_frames / duration, 
                     100.0*acc/train_gen.get_batch_size())

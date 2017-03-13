@@ -1,4 +1,4 @@
-from subprocess import Popen, PIPE, DEVNULL
+from subprocess import Popen, PIPE, DEVNULL, check_output
 import tempfile
 import kaldi_IO
 import pickle
@@ -22,37 +22,29 @@ class DataGenerator:
     self.batch_size = conf.get('batch_size', 256)
     self.splice = conf.get('context_width', 5)
     self.loop = loop    # keep looping over dataset
-    self.max_split_data_size = 1000 ## These many utterances are loaded into memory at once.
+    self.max_split_data_size = 500 ## These many utterances are loaded into memory at once.
 
     self.temp_dir = tempfile.mkdtemp(prefix='/data/exp/tmp/')
-
-    self.featDim = 440
-    self.split_data_counter = 0
-    
-    self.x = numpy.empty ((0, self.featDim))
-    self.y = numpy.empty (0, dtype='uint32')
-    self.batch_pointer = 0
 
     ## Read number of utterances
     with open (data + '/utt2spk') as f:
       self.num_utts = sum(1 for line in f)
 
     cmd = "cat %s/feats.scp | utils/shuffle_list.pl --srand %d > %s/shuffle.%s.scp" % (data, seed, exp, self.name)
-#    cmd = "cp %s/feats.scp %s/shuffle.%s.scp" % (data, exp, self.name)
     Popen(cmd, shell=True).communicate()
 
-    p1 = Popen (['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
+    cmd = ['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
                  'scp:' + self.data + '/cmvn.scp',
-                 'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:-'],
-                 stdout=PIPE)
-    p2 = Popen (['splice-feats', 'ark:-','ark:-'], stdin=p1.stdout, stdout=PIPE)
-    p1.stdout.close()
-    p3 = Popen (['transform-feats', exp+'/final.mat', 'ark:-', 'ark:-'], stdin=p2.stdout, stdout=PIPE)
-    p2.stdout.close()
-    p4 = Popen (['transform-feats','--utt2spk=ark:' + self.data + '/utt2spk','ark:cat %s/trans.* |' % trans_dir,
-                 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'], 
-                 stdin=p3.stdout).communicate()
-    p3.stdout.close()
+                 'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:-']
+    
+    cmd += ['|', 'splice-feats', 'ark:-','ark:-', '|', 'transform-feats', exp+'/final.mat', 'ark:-', 'ark:-']
+
+    if os.path.exists(trans_dir+'/trans.1'):
+      cmd += ['|', 'transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
+              'ark:cat %s/trans.* |' % trans_dir, 'ark:-', 'ark:-']
+    
+    cmd += ['|', 'copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp']
+    Popen(' '.join(cmd), shell=True).communicate()
 
     if name == 'train':
       p1 = Popen (['splice-feats', '--left-context='+str(self.splice), '--right-context='+str(self.splice),
@@ -70,9 +62,16 @@ class DataGenerator:
     
     numpy.random.seed(seed)
 
-  
-  def getFeatDim(self):
-    return self.featDim
+    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-']))
+    self.split_data_counter = 0
+    
+    self.x = numpy.empty ((0, self.feat_dim))
+    self.y = numpy.empty (0, dtype='uint32')
+    self.batch_pointer = 0
+
+
+  def get_feat_dim(self):
+    return self.feat_dim
 
 
   def __exit__ (self):
