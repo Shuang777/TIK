@@ -113,6 +113,8 @@ def build_layer(line, layer_in):
     layer_out = tf.tanh(layer_in)
   elif layer_type == '<Softmax>':
     layer_out = tf.nn.softmax(layer_in)
+  elif layer_type == '<Dropout>':
+    layer_out = tf.nn.dropout(layer_in, float(info))
 
   return layer_out
 

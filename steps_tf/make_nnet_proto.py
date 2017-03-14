@@ -125,8 +125,8 @@ def make_nnet_proto(feat_dim, num_leaves, conf, nnet_proto_file):
       # This is done by multiplying with stddev(U[0,1]) = sqrt(1/12).
       # The stddev of weights is consequently reduced with scale 0.29,
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
-    if conf.get('dropout', 1.0) != 1.0:
-      nnet_proto.write("<Dropout> <InputDim> %d <OutputDim> %d %f\n" % (num_hid_neurons, num_hid_neurons, conf['dropout']))
+    if conf.get('keep_prob', 1.0) != 1.0:
+      nnet_proto.write("<Dropout> %f\n" % conf['keep_prob'])
 
     # Internal AffineTransforms,
     for i in range(num_hid_layers-1):
@@ -134,8 +134,8 @@ def make_nnet_proto(feat_dim, num_leaves, conf, nnet_proto_file):
             (affine_layer, num_hid_neurons, num_hid_neurons, hid_bias_mean, hid_bias_range, \
              (param_stddev_factor * Glorot(num_hid_neurons, num_hid_neurons))))
       nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
-      if conf.get('dropout', 1.0) != 1.0:
-        nnet_proto.write("<Dropout> <InputDim> %d <OutputDim> %d %f\n" % (num_hid_neurons, num_hid_neurons, conf['dropout']))
+      if conf.get('keep_prob', 1.0) != 1.0:
+        nnet_proto.write("<Dropout> %f\n" % conf['keep_prob'])
 
     # Optionaly add bottleneck,
     if bottleneck_dim != 0:
@@ -158,8 +158,8 @@ def make_nnet_proto(feat_dim, num_leaves, conf, nnet_proto_file):
          (affine_layer, bottleneck_dim, num_hid_neurons, hid_bias_mean, hid_bias_range, \
           (param_stddev_factor * Glorot(o.bottleneck_dim, num_hid_neurons))))
       nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
-      if conf.get('dropout', 1.0) != 1.0:
-        nnet_proto.write("<Dropout> <InputDim> %d <OutputDim> %d %s\n" % (num_hid_neurons, num_hid_neurons, conf['dropout']))
+      if conf.get('keep_prob', 1.0) != 1.0:
+        nnet_proto.write("<Dropout> %s\n" % conf['keep_prob'])
 
     # Last AffineTransform (10x smaller learning rate on bias)
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f <LearnRateCoef> %f <BiasLearnRateCoef> %f\n" % \

@@ -22,7 +22,7 @@ class DataGenerator:
     self.batch_size = conf.get('batch_size', 256)
     self.splice = conf.get('context_width', 5)
     self.loop = loop    # keep looping over dataset
-    self.max_split_data_size = 500 ## These many utterances are loaded into memory at once.
+    self.max_split_data_size = 1000 ## These many utterances are loaded into memory at once.
 
     self.temp_dir = tempfile.mkdtemp(prefix='/data/exp/tmp/')
 
@@ -41,7 +41,7 @@ class DataGenerator:
 
     if os.path.exists(trans_dir+'/trans.1'):
       cmd += ['|', 'transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
-              'ark:cat %s/trans.* |' % trans_dir, 'ark:-', 'ark:-']
+              '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-']
     
     cmd += ['|', 'copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp']
     Popen(' '.join(cmd), shell=True).communicate()
@@ -62,7 +62,7 @@ class DataGenerator:
     
     numpy.random.seed(seed)
 
-    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-']))
+    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * (2*self.splice+1)
     self.split_data_counter = 0
     
     self.x = numpy.empty ((0, self.feat_dim))

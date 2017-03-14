@@ -13,7 +13,7 @@ def parse(config_tuple):
              'batch_size', 'hidden_units', 'num_hidden_layers']:
       config_parsed[i] = int(config_dict[i])
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
-             'initial_learning_rate', 'momentum', 'dropout']:
+             'initial_learning_rate', 'momentum', 'keep_prob']:
       config_parsed[i] = float(config_dict[i])
     elif i in ['batch_norm', 'with_softmax']:
       config_parsed[i] = str2boolean(config_dict[i])
