@@ -11,7 +11,6 @@ from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import NNTrainer
 from data_generator import DataGenerator
-from make_nnet_proto import make_nnet_proto
 import section_config   # my own config parser after configparser
 
 logger = logging.getLogger(__name__)
@@ -88,6 +87,7 @@ cv_gen = DataGenerator (exp+'/cv10', ali_labels, ali_dir, exp, 'cv', feature_con
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
 output_dim = get_model_pdfs(gmm)
+max_length = feature_conf.get('max_length', None)
 
 # save alignment priors
 tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
@@ -95,11 +95,13 @@ tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
 # save input_dim and output_dim
 open(exp+'/input_dim', 'w').write(str(input_dim))
 open(exp+'/output_dim', 'w').write(str(output_dim))
+open(exp+'/max_length', 'w').write(str(max_length))
 
 if 'init_file' in scheduler_conf:
   logger.info("Initializing graph using %s", scheduler_conf['init_file'])
 
-nnet = NNTrainer(input_dim, output_dim, feature_conf['batch_size'], summary_dir = summary_dir)
+nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, feature_conf['batch_size'], summary_dir = summary_dir,
+                 max_length = max_length)
 mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):
@@ -113,10 +115,12 @@ elif os.path.isfile(mlp_init+'.index') and 'init_file' not in nnet_conf:
 else:
   if nnet_proto_file is None:
     nnet_proto_file = exp+'/nnet.proto'
-    make_nnet_proto(input_dim, output_dim, nnet_conf, nnet_proto_file)
+    nnet.make_proto(nnet_conf, nnet_proto_file)
   else:
     shutil.copyfile(nnet_proto_file, exp+'/nnet.proto')
+
   nnet.init_nnet(nnet_proto_file, init_file = scheduler_conf.get('init_file', None))
+
   logger.info("initialize model to %s", mlp_init)
   nnet.write(mlp_init)
   mlp_best = mlp_init

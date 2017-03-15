@@ -24,7 +24,14 @@ def affine_transform(info, layer_in):
                          maxval = maxval),
                        name = 'biases')
 
-  layer_out = tf.matmul(layer_in, weights) + biases
+  if len(layer_in.get_shape()) == 2:
+    layer_out = tf.matmul(layer_in, weights) + biases
+  elif len(layer_in.get_shape()) == 3:   # this is after a LSTM layer, we need to do some reshaping
+    batch_size, max_length = layer_in.get_shape()[:2]
+    layer_out = tf.reshape(layer_in, [-1, input_dim])
+    layer_out = tf.matmul(layer_out, weights) + biases
+    layer_out = tf.reshape(layer_out, [int(batch_size), -1, output_dim])
+
   return layer_out
 
 
@@ -53,3 +60,24 @@ def batch_normalization(info, layer_in):
 
   return layer_out
 
+
+def lstm(info, layer_in, seq_length):
+  info_dict = info2dict(info)
+  
+  num_cell = int(info_dict['<NumCells>'])
+  num_layers = int(info_dict['<NumLayers>'])
+  keep_prob = float(info_dict['<KeepProb>'])
+
+  cell = tf.nn.rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
+
+  cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, output_keep_prob=keep_prob)
+
+  cell = tf.nn.rnn_cell.MultiRNNCell(cells=[cell] * num_layers, state_is_tuple=True)
+
+  layer_out,_ = tf.nn.dynamic_rnn(cell, 
+                  layer_in,
+                  sequence_length = seq_length,
+                  dtype=tf.float32)
+
+  
+  return layer_out

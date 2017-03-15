@@ -2,7 +2,8 @@ import tensorflow as tf
 import math
 import layer
 
-def placeholder_inputs(input_dim, batch_size, multi_subnnet = 1):
+
+def placeholder_dnn(input_dim, batch_size, multi_subnnet = 0):
   if multi_subnnet == 0:
     feats_holder = tf.placeholder(tf.float32, shape=(batch_size, input_dim), name='feature')
   else:
@@ -14,7 +15,19 @@ def placeholder_inputs(input_dim, batch_size, multi_subnnet = 1):
   return feats_holder, labels_holder
 
 
-def inference(feats_holder, nnet_proto_file):
+def placeholder_lstm(input_dim, max_length, batch_size):
+  feats_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length, input_dim), name='feature')
+
+  labels_holder = tf.placeholder(tf.int32, shape=(batch_size, max_length), name='target')
+
+  seq_length_holder = tf.placeholder(tf.int32, shape=(batch_size), name='seq_length')
+
+  mask_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length), name='mask')
+
+  return feats_holder, seq_length_holder, mask_holder, labels_holder
+
+
+def inference_dnn(feats_holder, nnet_proto_file):
   
   nnet_proto = open(nnet_proto_file, 'r')
   line = nnet_proto.readline().strip()
@@ -96,8 +109,26 @@ def inference_multi(feats_holders, switch_holders, nnet_proto_file):
   logits = layer_out
   return logits
 
+def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file):
+  
+  nnet_proto = open(nnet_proto_file, 'r')
+  line = nnet_proto.readline().strip()
+  assert line == '<NnetProto>'
+  layer_in = feats_holder
+  count_layer = 1
+  for line in nnet_proto:
+    line = line.strip()
+    if line == '</NnetProto>':
+      break
+    with tf.name_scope('layer'+str(count_layer)):
+      layer_out = build_layer(line, layer_in, seq_length = seq_length_holder)
+      layer_in = layer_out
+      count_layer += 1
+  logits = layer_out
+  return logits
 
-def build_layer(line, layer_in):
+
+def build_layer(line, layer_in, seq_length = None):
   layer_type, info = line.split(' ', 1)
   if layer_type == '<AffineTransform>':
     layer_out = layer.affine_transform(info, layer_in)
@@ -115,6 +146,8 @@ def build_layer(line, layer_in):
     layer_out = tf.nn.softmax(layer_in)
   elif layer_type == '<Dropout>':
     layer_out = tf.nn.dropout(layer_in, float(info))
+  elif layer_type == '<LSTM>':
+    layer_out = layer.lstm(info, layer_in, seq_length)
 
   return layer_out
 
@@ -172,12 +205,22 @@ def inference_from_file(feats_holder, input_dim, output_dim, init_file):
   return logits
 
 
-def loss(logits, labels):
+def loss_dnn(logits, labels):
 
   labels = tf.to_int64(labels)
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits, labels, name='xentropy')
   loss = tf.reduce_mean(cross_entropy, name='xentropy-mean')
+  return loss
+
+
+def loss_lstm(logits, labels, mask):
+
+  labels = tf.to_int64(labels)
+  cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+      logits, labels, name='xentropy')
+  masked_cross_entropy = cross_entropy * mask
+  loss = tf.reduce_mean(masked_cross_entropy, name='xentropy-mean')
   return loss
 
 

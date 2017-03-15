@@ -7,6 +7,7 @@ from subprocess import Popen,PIPE
 import nnet
 import math
 import logging
+from make_nnet_proto import make_nnet_proto, make_lstm_proto
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -17,22 +18,39 @@ class NNTrainer(object):
   session is initialized either by read() or by init_nnet().
   '''
 
-  def __init__(self, input_dim, output_dim, batch_size, use_gpu = True, summary_dir = None):
+  def __init__(self, arch, input_dim, output_dim, batch_size, use_gpu = True, summary_dir = None, max_length = None):
     ''' just some basic config for this trainer '''
+    self.arch = arch
     self.input_dim = input_dim
     self.output_dim = output_dim
     self.batch_size = batch_size
+    self.max_length = max_length    # used for lstm
     self.sess = None
     self.use_gpu = use_gpu
     self.summary_dir = summary_dir
+
+
+  def make_proto(self, nnet_conf, nnet_proto_file):
+    if self.arch == 'dnn':
+      make_nnet_proto(self.input_dim, self.output_dim, nnet_conf, nnet_proto_file)
+    elif self.arch == 'lstm':
+      make_lstm_proto(self.input_dim, self.output_dim, nnet_conf, nnet_proto_file)
 
 
   def __exit__ (self):
     if self.sess is not None:
       self.sess.close()
 
-
+  
   def read(self, filename, num_multi = 0):
+    if self.arch == 'dnn':
+      self.read_dnn(filename, num_multi)
+    elif self.arch == 'lstm':
+      self.read_lstm(filename)
+
+
+
+  def read_dnn(self, filename, num_multi = 0):
     ''' read graph from file '''
     self.graph = tf.Graph()
     with self.graph.as_default():
@@ -54,6 +72,26 @@ class NNTrainer(object):
       self.switch_holder = [self.graph.get_collection('switch_holder'+str(i))[0] for i in range(num_multi)]
 
     self.labels_holder = self.graph.get_collection('labels_holder')[0]
+
+
+  def read_lstm(self, filename):
+    ''' read graph from file '''
+    self.graph = tf.Graph()
+    with self.graph.as_default():
+      self.saver = tf.train.import_meta_graph(filename+'.meta')
+    
+    assert self.sess == None
+    self.set_gpu()
+    self.sess = tf.Session(graph=self.graph)
+    with self.graph.as_default():
+      self.saver.restore(self.sess, filename)
+      
+    self.logits = self.graph.get_collection('logits')[0]
+    self.outputs = self.graph.get_collection('outputs')[0]
+    self.feats_holder = self.graph.get_collection('feats_holder')[0]
+    self.labels_holder = self.graph.get_collection('labels_holder')[0]
+    self.seq_length_holder = self.graph.get_collection('seq_length_holder')[0]
+    self.mask_holder = self.graph.get_collection('mask_holder')[0]
 
 
   def write(self, filename):
@@ -79,21 +117,28 @@ class NNTrainer(object):
     return len(self.feats_holder)
 
 
-  def init_nnet(self, nnet_proto_file, seed=777, init_file = None):
+  def init_nnet(self, nnet_proto_file, init_file = None):
+    if self.arch == 'dnn':
+      self.init_dnn(nnet_proto_file, init_file)
+    elif self.arch == 'lstm':
+      self.init_lstm(nnet_proto_file)
+
+
+  def init_dnn(self, nnet_proto_file, init_file = None, seed=777):
     ''' initializing nnet from file or config (graph creation) '''
     self.graph = tf.Graph()
 
     self.num_multi = nnet.scan_subnnet(nnet_proto_file)
 
     with self.graph.as_default():
-      feats_holder, labels_holder = nnet.placeholder_inputs(self.input_dim, self.batch_size, 
+      feats_holder, labels_holder = nnet.placeholder_dnn(self.input_dim, self.batch_size, 
                                         multi_subnnet = self.num_multi)
       
       if init_file is not None:
         logits = nnet.inference_from_file(feats_holder, self.input_dim, 
                         self.output_dim, init_file)
       elif self.num_multi == 0:
-        logits = nnet.inference(feats_holder, nnet_proto_file)
+        logits = nnet.inference_dnn(feats_holder, nnet_proto_file)
       elif self.num_multi > 0:
         self.switch_holder = []
         for i in range(self.num_multi):
@@ -131,13 +176,53 @@ class NNTrainer(object):
       self.summary_writer.flush()
 
 
+  def init_lstm(self, nnet_proto_file, seed = 777):
+    self.graph = tf.Graph()
+    with self.graph.as_default():
+      feats_holder, seq_length_holder, mask_holder, labels_holder = nnet.placeholder_lstm(self.input_dim, 
+                                                                             self.max_length,
+                                                                             self.batch_size)
+
+      logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file)
+
+      outputs = tf.nn.softmax(logits)
+      init_all_op = tf.global_variables_initializer()
+
+      tf.add_to_collection('logits', logits)
+      tf.add_to_collection('outputs', outputs)
+      tf.add_to_collection('feats_holder', feats_holder)
+      tf.add_to_collection('labels_holder', labels_holder)
+      tf.add_to_collection('seq_length_holder', seq_length_holder)
+      tf.add_to_collection('mask_holder', mask_holder)
+    
+    assert self.sess == None
+    self.set_gpu()
+    self.sess = tf.Session(graph=self.graph)
+    tf.set_random_seed(seed)
+    self.sess.run(init_all_op)
+
+    self.logits = logits
+    self.outputs = outputs
+    self.feats_holder = feats_holder
+    self.labels_holder = labels_holder
+    self.seq_length_holder = seq_length_holder
+    self.mask_holder = mask_holder
+
+
   def init_training(self, optimizer_conf):
+    if self.arch == 'dnn':
+      self.init_training_dnn(optimizer_conf)
+    elif self.arch == 'lstm':
+      self.init_training_lstm(optimizer_conf)
+
+
+  def init_training_dnn(self, optimizer_conf):
     ''' initialze training graph; 
     assumes self.logits, self.labels_holder in place'''
     with self.graph.as_default():
 
       temp_vars = set(tf.global_variables())
-      loss = nnet.loss(self.logits, self.labels_holder)
+      loss = nnet.loss_dnn(self.logits, self.labels_holder)
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
       if self.num_multi == 0:
         train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
@@ -159,6 +244,53 @@ class NNTrainer(object):
     self.eval_acc = eval_acc
 
 
+  def init_training_lstm(self, optimizer_conf):
+    ''' initialze training graph; 
+    assumes self.logits, self.labels_holder in place'''
+    with self.graph.as_default():
+
+      loss = nnet.loss_lstm(self.logits, self.labels_holder, self.mask_holder)
+      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
+      train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
+      eval_acc = nnet.evaluation(self.logits, self.labels_holder)
+
+    self.loss = loss
+    self.learning_rate_holder = learning_rate_holder
+    self.train_op = train_op
+    self.eval_acc = eval_acc
+
+  
+  def prepare_feed(self, train_gen, learning_rate):
+    if self.arch == 'dnn':
+      feed_dict, has_data = self.prepare_feed_dnn(train_gen, learning_rate)
+    elif self.arch == 'lstm':
+      feed_dict, has_data = self.prepare_feed_lstm(train_gen, learning_rate)
+
+    return feed_dict, has_data
+
+
+  def prepare_feed_dnn(self, train_gen, learning_rate):
+
+    x, y = train_gen.get_batch()
+
+    feed_dict = { self.feats_holder : x,
+                  self.labels_holder : y,
+                  self.learning_rate_holder: learning_rate}
+    return feed_dict, x is not None
+
+
+  def prepare_feed_lstm(self, train_gen, learning_rate):
+    x, y, seq_length, mask = train_gen.get_batch()
+
+    feed_dict = { self.feats_holder : x,
+                  self.labels_holder : y,
+                  self.seq_length_holder: seq_length,
+                  self.mask_holder: mask,
+                  self.learning_rate_holder: learning_rate}
+
+    return feed_dict, x is not None
+    
+
   def iter_data(self, logfile, train_gen, learning_rate = None, keep_acc = False):
     '''Train/test one iteration; use learning_rate == None to specify test mode'''
 
@@ -175,16 +307,13 @@ class NNTrainer(object):
     sum_acc_frames = 0
 
     start_time = time.time()
+
     while(True):
 
-      x, y = train_gen.get_batch()
+      feed_dict, has_data = self.prepare_feed(train_gen, learning_rate)
 
-      if x is None:   # no more data for training
+      if not has_data:   # no more data for training
         break
-
-      feed_dict = { self.feats_holder : x,
-                    self.labels_holder : y,
-                    self.learning_rate_holder: learning_rate}
 
       if learning_rate is None:
         loss = self.sess.run(self.loss, feed_dict = feed_dict)
