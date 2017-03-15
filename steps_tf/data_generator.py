@@ -53,10 +53,11 @@ class DataGenerator:
       Popen(['compute-cmvn-stats', 'ark:-', exp+'/cmvn.mat'], stdin=p1.stdout).communicate()
       p1.stdout.close()
 
-    split_scp_cmd = 'utils/split_scp.pl ' + exp + '/' + self.name + '.scp'
     self.num_split = - (-self.num_utts // self.max_split_data_size)  # integer division
+    split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
     for i in range(self.num_split):
-      split_scp_cmd += ' ' + self.temp_dir + '/split.' + self.name + '.' + str(i) + '.scp'
+      split_scp_cmd += ' %d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.temp_dir, self.name, i)
+      Popen(split_scp_cmd, shell=True).communicate()
     
     Popen (split_scp_cmd, shell=True).communicate()
     
