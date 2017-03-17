@@ -81,8 +81,16 @@ for line in p1.stdout:
   utt = line[0].decode(sys.stdout.encoding)
   ali_labels[utt] = [int(i) for i in line[1:]]
 
-tr_gen = DataGenerator (exp+'/tr90', ali_labels, ali_dir, exp, 'train', feature_conf, shuffle=True)
-cv_gen = DataGenerator (exp+'/cv10', ali_labels, ali_dir, exp, 'cv', feature_conf)
+if nnet_conf['nnet_arch'] == 'lstm':
+  data_gen_type = 'utterance'
+elif nnet_conf['nnet_arch'] == 'dnn':
+  data_gen_type = 'frame'
+
+tr_gen = DataGenerator (data_gen_type, exp+'/tr90', ali_labels, ali_dir, 
+                        exp, 'train', feature_conf, shuffle=True)
+
+cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir, 
+                        exp, 'cv', feature_conf)
 
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
@@ -100,7 +108,8 @@ open(exp+'/max_length', 'w').write(str(max_length))
 if 'init_file' in scheduler_conf:
   logger.info("Initializing graph using %s", scheduler_conf['init_file'])
 
-nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, feature_conf['batch_size'], summary_dir = summary_dir,
+nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
+                 feature_conf['batch_size'], summary_dir = summary_dir,
                  max_length = max_length)
 mlp_init = exp+'/model.init'
 

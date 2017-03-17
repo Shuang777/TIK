@@ -16,6 +16,10 @@ def placeholder_dnn(input_dim, batch_size, multi_subnnet = 0):
 
 
 def placeholder_lstm(input_dim, max_length, batch_size):
+  '''
+  outputs:
+    feats_holder, labels_holder, seq_length_holder, mask_holder
+  '''
   feats_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length, input_dim), name='feature')
 
   labels_holder = tf.placeholder(tf.int32, shape=(batch_size, max_length), name='target')
@@ -108,6 +112,7 @@ def inference_multi(feats_holders, switch_holders, nnet_proto_file):
       count_layer += 1
   logits = layer_out
   return logits
+
 
 def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file):
   
@@ -210,17 +215,22 @@ def loss_dnn(logits, labels):
   labels = tf.to_int64(labels)
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits, labels, name='xentropy')
-  loss = tf.reduce_mean(cross_entropy, name='xentropy-mean')
+  loss = tf.reduce_sum(cross_entropy, name='xentropy-mean')
   return loss
 
 
 def loss_lstm(logits, labels, mask):
-
+  '''
+  args:
+    logits: tf tensor of size [batch_size, max_length, num_targets]
+    labels: tf tensor of size [batch_size, max_length]
+    mask: tf tensor of size [batch_size, max_length]
+  '''
   labels = tf.to_int64(labels)
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits, labels, name='xentropy')
-  masked_cross_entropy = cross_entropy * mask
-  loss = tf.reduce_mean(masked_cross_entropy, name='xentropy-mean')
+  masked_cross_entropy = tf.multiply(cross_entropy, mask)
+  loss = tf.reduce_sum(masked_cross_entropy, name='xentropy-mean')
   return loss
 
 
@@ -249,4 +259,20 @@ def training(op_conf, loss, learning_rate_holder, scopes = None):
 def evaluation(logits, labels):
 
   correct = tf.nn.in_top_k(logits, labels, 1)
+  return tf.reduce_sum(tf.cast(correct, tf.int32))
+
+
+def evaluation_lstm(logits, labels, mask):
+  '''
+  args:
+    logits: tf tensor of size [batch_size, max_length, num_targets]
+    labels: tf tensor of size [batch_size, max_length]
+    mask: tf tensor of size [batch_size, max_length]
+  '''
+  feat_dim = logits.get_shape()[2]
+  logits_reshape = tf.reshape(logits, [-1, int(feat_dim)])
+  labels_reshape = tf.reshape(labels, [-1])
+  mask_reshape = tf.reshape(mask, [-1])
+  correct = tf.nn.in_top_k(logits_reshape, labels_reshape, 1)
+  correct = tf.multiply(tf.to_float(correct), mask_reshape)
   return tf.reduce_sum(tf.cast(correct, tf.int32))

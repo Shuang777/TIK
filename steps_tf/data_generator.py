@@ -5,24 +5,26 @@ import pickle
 import shutil
 import numpy
 import os
+import math
 
-## Data generator class for Kaldi
 class DataGenerator:
-  def __init__ (self, data, labels, 
+  def __init__ (self, data_gen_type, data, labels, 
                 trans_dir, exp, name, 
                 conf, 
                 seed=777, 
                 shuffle=False,
                 loop=False):
     
+    self.data_gen_type = data_gen_type
     self.data = data
     self.labels = labels
     self.exp = exp
     self.name = name
     self.batch_size = conf.get('batch_size', 256)
     self.splice = conf.get('context_width', 5)
+    self.max_length = conf.get('max_length', 2000)
     self.loop = loop    # keep looping over dataset
-    self.max_split_data_size = 1000 ## These many utterances are loaded into memory at once.
+    self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
 
     self.temp_dir = tempfile.mkdtemp(prefix='/data/exp/tmp/')
 
@@ -53,10 +55,10 @@ class DataGenerator:
       Popen(['compute-cmvn-stats', 'ark:-', exp+'/cmvn.mat'], stdin=p1.stdout).communicate()
       p1.stdout.close()
 
-    self.num_split = - (-self.num_utts // self.max_split_data_size)  # integer division
-    split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
+    self.num_split = math.ceil(self.num_utts / self.max_split_data_size)  # integer division
     for i in range(self.num_split):
-      split_scp_cmd += ' %d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.temp_dir, self.name, i)
+      split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
+      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.temp_dir, self.name, i)
       Popen(split_scp_cmd, shell=True).communicate()
     
     Popen (split_scp_cmd, shell=True).communicate()
@@ -66,8 +68,15 @@ class DataGenerator:
     self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * (2*self.splice+1)
     self.split_data_counter = 0
     
-    self.x = numpy.empty ((0, self.feat_dim))
-    self.y = numpy.empty (0, dtype='uint32')
+    if self.data_gen_type == 'frame':
+      self.x = numpy.empty ((0, self.feat_dim))
+      self.y = numpy.empty (0, dtype='int32')
+    elif self.data_gen_type == 'utterance':
+      self.x = numpy.empty ((0, self.max_length, self.feat_dim))
+      self.y = numpy.empty ((0, self.max_length), dtype='int32')
+      self.seq_length = numpy.empty (0, dtype='int32')
+      self.mask = numpy.empty ((0, self.max_length))
+    
     self.batch_pointer = 0
 
 
@@ -79,8 +88,22 @@ class DataGenerator:
     shutil.rmtree(self.temp_dir)
   
 
+  def has_data(self):
+  # has enough data for next batch
+    if self.loop or self.split_data_counter != self.num_split:     # we always have data if in loop mode
+      return True
+    elif self.batch_pointer + self.batch_size >= len(self.x):
+      return False
+    return True
+      
+
   ## Return a batch to work on
   def get_next_split_data (self):
+    '''
+    output: 
+      feat_list: list of np matrix [num_frames, feat_dim]
+      label_list: list of int32 np array [num_frames] 
+    '''
     p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), 
                  '--right-context='+str(self.splice), 
                  'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
@@ -94,7 +117,7 @@ class DataGenerator:
       uid, feat = kaldi_IO.read_utterance (p2.stdout)
       if uid == None:
         # no more utterance, return
-        return (numpy.vstack(feat_list), numpy.hstack(label_list))
+        return (feat_list, label_list)
       if uid in self.labels:
         feat_list.append (feat)
         label_list.append (self.labels[uid])
@@ -102,18 +125,14 @@ class DataGenerator:
 
     p1.stdout.close()
 
-
-  def hasData(self):
-  # has enough data for next batch
-    if self.loop or self.split_data_counter != self.num_split:     # we always have data if in loop mode
-      return True
-    elif self.batch_pointer + self.batch_size >= len(self.x):
-      return False
-    return True
-      
           
   ## Retrive a mini batch
   def get_batch (self):
+    '''
+    output:
+      x_mini: np matrix [num_frames, feat_dim]
+      y_mini: np array [num_frames]
+    '''
     # read split data until we have enough for this batch
     while (self.batch_pointer + self.batch_size >= len (self.x)):
       if not self.loop and self.split_data_counter == self.num_split:
@@ -121,8 +140,9 @@ class DataGenerator:
         return None, None
 
       x,y = self.get_next_split_data()
-      self.x = numpy.concatenate ((self.x[self.batch_pointer:], x))
-      self.y = numpy.append (self.y[self.batch_pointer:], y)
+
+      self.x = numpy.concatenate ((self.x[self.batch_pointer:], numpy.vstack(x)))
+      self.y = numpy.append (self.y[self.batch_pointer:], numpy.hstack(y))
       self.batch_pointer = 0
 
       ## Shuffle data
@@ -137,12 +157,114 @@ class DataGenerator:
     
     x_mini = self.x[self.batch_pointer:self.batch_pointer+self.batch_size]
     y_mini = self.y[self.batch_pointer:self.batch_pointer+self.batch_size]
+    
     self.batch_pointer += self.batch_size
+    self.last_batch_frames = len(y_mini)
+
     return x_mini, y_mini
+
+  
+  def pad_labels(self, labels):
+    '''
+    input:
+      labels: list of np array [num_frames]
+    output:
+      labels_pad: matrix[batch_size, max_length]
+      mask: matrix[batch_size, max_length]
+    '''
+    labels_pad = []
+    mask = []
+    max_length = self.max_length
+    for i in labels:
+      if len(i) > max_length:
+        labels_pad.append(i[:max_length])
+        mask.append(numpy.ones(max_length))
+      else:
+        labels_pad.append(numpy.append(i, numpy.zeros(max_length - len(i))))
+        mask.append(numpy.append(numpy.ones(len(i)), numpy.zeros(max_length - len(i))))
+
+    labels_pad = numpy.array(labels_pad)
+    mask = numpy.array(mask)
+
+    return labels_pad, mask
+
+
+  def pad_features(self, features):
+    '''
+    input:
+      features: list of np 2d-array [num_frames, feat_dim]
+    output:
+      features_pad: np 3d-array [batch_size, max_length, feat_dim]
+    '''
+    features_pad = []
+    max_length = self.max_length
+    for i in features:
+      if len(i) > max_length:
+        features_pad.append(i[:max_length])
+      else:
+        zeros2pad = numpy.zeros((max_length - len(i), len(i[0])))
+        features_pad.append(numpy.concatenate((i, zeros2pad)))
+
+    features_pad = numpy.array(features_pad)
+
+    return features_pad
+
+
+  def get_batch_utterances (self):
+    '''
+    output:
+      x_mini: np matrix [batch_size, max_length, feat_dim]
+      y_mini: np matrix [batch_size, max_length]
+      seq_length: np array [batch_size]
+      mask: np matrix [batch_size, max_length]
+    '''
+    # read split data until we have enough for this batch
+    while (self.batch_pointer + self.batch_size >= len (self.x)):
+      if not self.loop and self.split_data_counter == self.num_split:
+        # not loop mode and we arrive the end, do not read anymore
+        return None, None, None, None
+
+      x, y = self.get_next_split_data()
+      x_pad = self.pad_features(x)
+      seq_length = [len(i) for i in x]
+      y_pad, mask = self.pad_labels(y)
+
+      self.x = numpy.concatenate ((self.x[self.batch_pointer:], x_pad))
+      self.y = numpy.concatenate ((self.y[self.batch_pointer:], y_pad))
+      self.seq_length = numpy.append (self.seq_length[self.batch_pointer:], seq_length)
+      self.mask = numpy.concatenate ((self.mask[self.batch_pointer:], mask))
+      
+      self.batch_pointer = 0
+
+      ## Shuffle data, utterance base
+      randomInd = numpy.array(range(len(self.x)))
+      numpy.random.shuffle(randomInd)
+      self.x = self.x[randomInd]
+      self.y = self.y[randomInd]
+      self.seq_length = self.seq_length[randomInd]
+      self.mask = self.mask[randomInd]
+
+      self.split_data_counter += 1
+      if self.loop and self.split_data_counter == self.num_split:
+        self.split_data_counter = 0
+    
+    x_mini = self.x[self.batch_pointer:self.batch_pointer+self.batch_size]
+    y_mini = self.y[self.batch_pointer:self.batch_pointer+self.batch_size]
+    seq_mini = self.seq_length[self.batch_pointer:self.batch_pointer+self.batch_size]
+    mask_mini = self.mask[self.batch_pointer:self.batch_pointer+self.batch_size]
+
+    self.batch_pointer += self.batch_size
+    self.last_batch_frames = seq_mini.sum()
+
+    return x_mini, y_mini, seq_mini, mask_mini
 
 
   def get_batch_size(self):
       return self.batch_size
+
+
+  def get_last_batch_frames(self):
+      return self.last_batch_frames
 
 
   def reset_batch(self):

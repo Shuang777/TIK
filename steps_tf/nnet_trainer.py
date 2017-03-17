@@ -208,6 +208,10 @@ class NNTrainer(object):
     self.seq_length_holder = seq_length_holder
     self.mask_holder = mask_holder
 
+    if self.summary_dir is not None:
+      self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
+      self.summary_writer.flush()
+
 
   def init_training(self, optimizer_conf):
     if self.arch == 'dnn':
@@ -252,7 +256,7 @@ class NNTrainer(object):
       loss = nnet.loss_lstm(self.logits, self.labels_holder, self.mask_holder)
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
       train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
-      eval_acc = nnet.evaluation(self.logits, self.labels_holder)
+      eval_acc = nnet.evaluation_lstm(self.logits, self.labels_holder, self.mask_holder)
 
     self.loss = loss
     self.learning_rate_holder = learning_rate_holder
@@ -280,7 +284,7 @@ class NNTrainer(object):
 
 
   def prepare_feed_lstm(self, train_gen, learning_rate):
-    x, y, seq_length, mask = train_gen.get_batch()
+    x, y, seq_length, mask = train_gen.get_batch_utterances()
 
     feed_dict = { self.feats_holder : x,
                   self.labels_holder : y,
@@ -320,22 +324,23 @@ class NNTrainer(object):
       else:
         _, loss = self.sess.run([self.train_op, self.loss], feed_dict = feed_dict)
 
-      sum_avg_loss += loss
-      sum_frames += train_gen.get_batch_size()
+      batch_frames = train_gen.get_last_batch_frames()
+      sum_avg_loss += loss / batch_frames
+      sum_frames += batch_frames
       duration = time.time() - start_time
       count_steps += 1
 
       if keep_acc or count_steps % 1000 == 0 or count_steps == 1:
         acc = self.sess.run(self.eval_acc, feed_dict = feed_dict)
         sum_accs += acc
-        sum_acc_frames += train_gen.get_batch_size()
+        sum_acc_frames += train_gen.get_last_batch_frames()
 
         # Print status to stdout.
         if count_steps % 1000 == 0:
           logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", 
                     count_steps, sum_avg_loss / count_steps, 
                     sum_frames, duration, sum_frames / duration, 
-                    100.0*acc/train_gen.get_batch_size())
+                    100.0*acc/train_gen.get_last_batch_frames())
 
     # reset batch_generator because it might be used again
     train_gen.reset_batch()
@@ -393,21 +398,22 @@ class NNTrainer(object):
       else:
         _, loss = self.sess.run([self.train_op, self.loss], feed_dict = feed_dict)
 
-      sum_avg_loss += loss
-      sum_frames += train_gen.get_batch_size()
+      batch_frames = train_gen.get_last_batch_frames()
+      sum_avg_loss += loss / batch_frames
+      sum_frames += batch_frames
       duration = time.time() - start_time
       count_steps += 1
 
       if keep_acc or count_steps % 1000 == 0 or count_steps == 1:
         acc = self.sess.run(self.eval_acc, feed_dict = feed_dict)
         sum_accs += acc
-        sum_acc_frames += train_gen.get_batch_size()
+        sum_acc_frames += batch_frames
 
         # Print status to stdout.
         logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", 
                     count_steps, sum_avg_loss / count_steps, 
                     sum_frames, duration, sum_frames / duration, 
-                    100.0*acc/train_gen.get_batch_size())
+                    100.0*acc/train_gen.get_last_batch_frames())
 
     # reset batch_generator because it might be used again
     train_gen.reset_batch()
@@ -473,10 +479,11 @@ class NNTrainer(object):
       
       _, loss_aux = self.sess.run([self.train_op[1], self.loss], feed_dict = feed_dict_aux)
 
-      sum_avg_loss += loss
-      sum_avg_loss_aux += loss_aux
+      batch_frames = train_gen.get_last_batch_frames()
+      sum_avg_loss += loss / batch_frames
+      sum_avg_loss_aux += loss_aux / batch_frames
 
-      sum_frames += train_gen.get_batch_size()
+      sum_frames += batch_frames
       duration = time.time() - start_time
       count_steps += 1
 
@@ -485,13 +492,13 @@ class NNTrainer(object):
         acc_aux = self.sess.run(self.eval_acc, feed_dict = feed_dict_aux)
         sum_accs += acc
         sum_accs_aux += acc_aux
-        sum_acc_frames += train_gen.get_batch_size()
+        sum_acc_frames += train_gen.get_last_batch_frames()
 
         # Print status to stdout.
         logger.info("Step %5d: avg loss = %.6f (aux loss = %.6f) on %d frames,  (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%% (aux acc: %.2f%%)",
                     count_steps, sum_avg_loss / count_steps, sum_avg_loss_aux / count_steps,
                     sum_frames, duration, sum_frames / duration, 
-                    100.0*acc/train_gen.get_batch_size(), 100.0*acc_aux/train_gen.get_batch_size())
+                    100.0*acc/train_gen.get_last_batch_frames(), 100.0*acc_aux/train_gen.get_batch_size())
 
     # reset batch_generator because it might be used again
     train_gen.reset_batch()
