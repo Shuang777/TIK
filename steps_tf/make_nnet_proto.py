@@ -46,7 +46,8 @@ def make_lstm_proto(feat_dim, output_dim, conf, nnet_proto_file):
 
   nnet_proto.write("<NnetProto>\n")
 
-  nnet_proto.write("<%s> <NumCells> %d <NumLayers> %d <KeepProb> %f\n" % (lstm_type, num_cells, num_hid_layers, conf.get('keep_prob', 1.0)))
+  for i in range(num_hid_layers):
+    nnet_proto.write("<%s> <NumCells> %d <KeepInProb> %f <KeepOutProb> %f\n" % (lstm_type, num_cells, conf.get('keep_in_prob', 1.0), conf.get('keep_out_prob', 1.0)))
   
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f <LearnRateCoef> %f <BiasLearnRateCoef> %f\n" % \
       (affine_layer, num_cells, output_dim, 0.0, 0.0, \

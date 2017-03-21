@@ -75,7 +75,7 @@ class DataGenerator:
       self.x = numpy.empty ((0, self.max_length, self.feat_dim))
       self.y = numpy.empty ((0, self.max_length), dtype='int32')
       self.seq_length = numpy.empty (0, dtype='int32')
-      self.mask = numpy.empty ((0, self.max_length))
+      self.mask = numpy.empty ((0, self.max_length), dtype='float32')
     
     self.batch_pointer = 0
 
@@ -127,7 +127,7 @@ class DataGenerator:
 
           
   ## Retrive a mini batch
-  def get_batch (self):
+  def get_batch_frames (self):
     '''
     output:
       x_mini: np matrix [num_frames, feat_dim]
@@ -164,50 +164,53 @@ class DataGenerator:
     return x_mini, y_mini
 
   
-  def pad_labels(self, labels):
-    '''
-    input:
-      labels: list of np array [num_frames]
-    output:
-      labels_pad: matrix[batch_size, max_length]
-      mask: matrix[batch_size, max_length]
-    '''
-    labels_pad = []
-    mask = []
-    max_length = self.max_length
-    for i in labels:
-      if len(i) > max_length:
-        labels_pad.append(i[:max_length])
-        mask.append(numpy.ones(max_length))
-      else:
-        labels_pad.append(numpy.append(i, numpy.zeros(max_length - len(i))))
-        mask.append(numpy.append(numpy.ones(len(i)), numpy.zeros(max_length - len(i))))
-
-    labels_pad = numpy.array(labels_pad)
-    mask = numpy.array(mask)
-
-    return labels_pad, mask
-
-
-  def pad_features(self, features):
+  def pack_utt_data(self, features, labels):
     '''
     input:
       features: list of np 2d-array [num_frames, feat_dim]
+      labels: list of np array [num_frames]
     output:
       features_pad: np 3d-array [batch_size, max_length, feat_dim]
+      labels_pad: matrix[batch_size, max_length]
+      seq_length: np array [batch_size]
+      mask: matrix[batch_size, max_length]
     '''
+    assert len(features) == len(labels)
+
     features_pad = []
+    labels_pad = []
+    mask = []
+    seq_length = []
     max_length = self.max_length
-    for i in features:
-      if len(i) > max_length:
-        features_pad.append(i[:max_length])
-      else:
-        zeros2pad = numpy.zeros((max_length - len(i), len(i[0])))
-        features_pad.append(numpy.concatenate((i, zeros2pad)))
+
+    for feat, lab in zip(features, labels):
+
+      assert len(feat) == len(lab)
+      start_index = 0
+
+      while start_index + max_length < len(feat):
+        # cut utterances into pieces
+        end_index = start_index + max_length
+        features_pad.append(feat[start_index:end_index])
+        labels_pad.append(lab[start_index:end_index])
+        seq_length.append(max_length)
+        mask.append(numpy.ones(max_length))
+        start_index += max_length
+
+      # last part, pad zero
+      num_zero = max_length + start_index - len(feat)
+      zeros2pad = numpy.zeros((num_zero, len(feat[0])))
+      features_pad.append(numpy.concatenate((feat[start_index:], zeros2pad)))
+      labels_pad.append(numpy.append(lab[start_index:], numpy.zeros(num_zero)))
+      seq_length.append(len(feat) - start_index)
+      mask.append(numpy.append(numpy.ones(len(feat) - start_index), numpy.zeros(num_zero)))
 
     features_pad = numpy.array(features_pad)
+    labels_pad = numpy.array(labels_pad)
+    seq_length = numpy.array(seq_length)
+    mask = numpy.array(mask)
 
-    return features_pad
+    return features_pad, labels_pad, seq_length, mask
 
 
   def get_batch_utterances (self):
@@ -225,13 +228,11 @@ class DataGenerator:
         return None, None, None, None
 
       x, y = self.get_next_split_data()
-      x_pad = self.pad_features(x)
-      seq_length = [len(i) for i in x]
-      y_pad, mask = self.pad_labels(y)
+      x_pad, y_pad, seq_length, mask = self.pack_utt_data(x, y)
 
       self.x = numpy.concatenate ((self.x[self.batch_pointer:], x_pad))
       self.y = numpy.concatenate ((self.y[self.batch_pointer:], y_pad))
-      self.seq_length = numpy.append (self.seq_length[self.batch_pointer:], seq_length)
+      self.seq_length = numpy.append(self.seq_length[self.batch_pointer:], seq_length)
       self.mask = numpy.concatenate ((self.mask[self.batch_pointer:], mask))
       
       self.batch_pointer = 0

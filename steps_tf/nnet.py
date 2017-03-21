@@ -32,6 +32,12 @@ def placeholder_lstm(input_dim, max_length, batch_size):
 
 
 def inference_dnn(feats_holder, nnet_proto_file):
+  '''
+  args:
+    feats_holder: np 2-d array of size [num_batch, feat_dim]
+  outputs: 
+    logits: np 2-d array of size [num_batch, num_targets]
+  '''
   
   nnet_proto = open(nnet_proto_file, 'r')
   line = nnet_proto.readline().strip()
@@ -42,7 +48,7 @@ def inference_dnn(feats_holder, nnet_proto_file):
     line = line.strip()
     if line == '</NnetProto>':
       break
-    with tf.name_scope('layer'+str(count_layer)):
+    with tf.variable_scope('layer'+str(count_layer)):
       layer_out = build_layer(line, layer_in)
       layer_in = layer_out
       count_layer += 1
@@ -75,7 +81,7 @@ def inference_multi(feats_holders, switch_holders, nnet_proto_file):
     if line == '<SubNnet>':
       layer_in = feats_holders[count_subnnet]
       line = nnet_proto.readline().strip()
-      with tf.name_scope('layer0_sub'+str(count_subnnet)):
+      with tf.variable_scope('layer0_sub'+str(count_subnnet)):
         while line:
           layer_out = build_layer(line, layer_in)
           layer_in = layer_out
@@ -91,7 +97,7 @@ def inference_multi(feats_holders, switch_holders, nnet_proto_file):
     line = nnet_proto.readline().strip()
 
   # merge part
-  with tf.name_scope('layer_merge'):
+  with tf.variable_scope('layer_merge'):
     for i in range(count_subnnet):
       if i == 0:
         layer_out = tf.scalar_mul(switch_holders[0], subnnet_outs[0])
@@ -101,12 +107,12 @@ def inference_multi(feats_holders, switch_holders, nnet_proto_file):
   # shared hidden part
   count_layer = 1
   layer_in = layer_out
-  with tf.name_scope('layer_shared'):
+  with tf.variable_scope('layer_shared'):
     for line in nnet_proto:
       line = line.strip()
       if line == '</NnetProto>':
         break
-      with tf.name_scope('layer'+str(count_layer)):
+      with tf.variable_scope('layer'+str(count_layer)):
         layer_out = build_layer(line, layer_in)
       layer_in = layer_out
       count_layer += 1
@@ -115,7 +121,13 @@ def inference_multi(feats_holders, switch_holders, nnet_proto_file):
 
 
 def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file):
-  
+  '''
+  args:
+    feats_holder: np 3-d array of size [num_batch, max_length, feat_dim]
+    seq_length_holder: np array of size [num_batch]
+  outputs: 
+    logits: np 3-d array of size [num_batch, max_length, num_targets]
+  '''
   nnet_proto = open(nnet_proto_file, 'r')
   line = nnet_proto.readline().strip()
   assert line == '<NnetProto>'
@@ -125,7 +137,7 @@ def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file):
     line = line.strip()
     if line == '</NnetProto>':
       break
-    with tf.name_scope('layer'+str(count_layer)):
+    with tf.variable_scope('layer'+str(count_layer)):
       layer_out = build_layer(line, layer_in, seq_length = seq_length_holder)
       layer_in = layer_out
       count_layer += 1
@@ -153,6 +165,8 @@ def build_layer(line, layer_in, seq_length = None):
     layer_out = tf.nn.dropout(layer_in, float(info))
   elif layer_type == '<LSTM>':
     layer_out = layer.lstm(info, layer_in, seq_length)
+  elif layer_type == '<BLSTM>':
+    layer_out = layer.blstm(info, layer_in, seq_length)
 
   return layer_out
 
@@ -191,12 +205,12 @@ def inference_from_file(feats_holder, input_dim, output_dim, init_file):
 
       line = nnet.readline()
       if line.startswith('<Sigmoid>'):
-        with tf.name_scope('hidden'+str(i+1)):
+        with tf.variable_scope('hidden'+str(i+1)):
           weights = tf.Variable(w, name='weights')
           biases = tf.Variable(b, name='biases')
           layer_out = tf.sigmoid(tf.matmul(layer_in, weights) + biases)
       elif line.startswith('<Softmax>'):
-        with tf.name_scope('softmax_linear'):
+        with tf.variable_scope('softmax_linear'):
           weights = tf.Variable(w, name='weights')
           biases = tf.Variable(b, name='biases')
           logits = tf.add(tf.matmul(layer_in, weights), biases, name = 'logits')
@@ -215,7 +229,7 @@ def loss_dnn(logits, labels):
   labels = tf.to_int64(labels)
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits, labels, name='xentropy')
-  loss = tf.reduce_sum(cross_entropy, name='xentropy-mean')
+  loss = tf.reduce_mean(cross_entropy, name='xentropy-mean')
   return loss
 
 
@@ -230,7 +244,9 @@ def loss_lstm(logits, labels, mask):
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits, labels, name='xentropy')
   masked_cross_entropy = tf.multiply(cross_entropy, mask)
-  loss = tf.reduce_sum(masked_cross_entropy, name='xentropy-mean')
+  num_elements = tf.reduce_prod(mask.get_shape())
+  num_counts = tf.reduce_sum(mask)
+  loss = tf.reduce_mean(masked_cross_entropy, name='xentropy-mean') / num_counts * tf.to_float(num_elements)
   return loss
 
 

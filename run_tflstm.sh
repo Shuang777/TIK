@@ -21,13 +21,13 @@ train_ali=exp/tri4_ali_nodup
 
 lang=data/lang_sw1_tg
 gmm=exp/tri4
-exp=exp/tflstm_5a_10ks_256x2
+exp=exp/tflstm_5a_10ks_256x4_kp0.8_lr0.4
 
 config=config/swbd_lstm.cfg
 
 if $debug; then
   train=data/train_debug
-  train_ali=exp/tri4_ali_30kshort
+  train_ali=exp/tri4_ali_debug
   config=config/swbd_lstm.cfg
 
   exp=exp/tflstm_5a_debug

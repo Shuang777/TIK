@@ -43,11 +43,18 @@ input_dim = int(open(srcdir+'/input_dim').read())
 output_dim = int(open(srcdir+'/output_dim').read())
 splice = feature_conf['context_width']
 
+if os.path.isfile(srcdir+'/max_length'):
+  max_length = int(open(srcdir+'/max_length').read())
+else:
+  max_length = None
+
 # set gpu
 logger.info("use-gpu: %s", str(args.use_gpu))
 
 logger.info("initializing the graph")
-nnet = NNTrainer(input_dim, output_dim, feature_conf['batch_size'], use_gpu = False)
+nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
+                 feature_conf['batch_size'], use_gpu = False,
+                 max_length = max_length)
 
 if os.path.exists(srcdir + '/multi.count'):
   num_multi = int(open(srcdir + '/multi.count').read())

@@ -14,7 +14,7 @@ def parse(config_tuple):
              'max_length']:
       config_parsed[i] = int(config_dict[i])
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
-             'initial_learning_rate', 'momentum', 'keep_prob']:
+             'initial_learning_rate', 'momentum', 'keep_prob', 'keep_in_prob', 'keep_out_prob']:
       config_parsed[i] = float(config_dict[i])
     elif i in ['batch_norm', 'with_softmax']:
       config_parsed[i] = str2boolean(config_dict[i])

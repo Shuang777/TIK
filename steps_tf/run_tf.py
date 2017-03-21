@@ -89,6 +89,8 @@ elif nnet_conf['nnet_arch'] == 'dnn':
 tr_gen = DataGenerator (data_gen_type, exp+'/tr90', ali_labels, ali_dir, 
                         exp, 'train', feature_conf, shuffle=True)
 
+a,b,c,d = tr_gen.get_batch_utterances()
+
 cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir, 
                         exp, 'cv', feature_conf)
 

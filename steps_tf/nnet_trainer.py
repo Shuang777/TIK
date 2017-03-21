@@ -275,7 +275,7 @@ class NNTrainer(object):
 
   def prepare_feed_dnn(self, train_gen, learning_rate):
 
-    x, y = train_gen.get_batch()
+    x, y = train_gen.get_batch_frames()
 
     feed_dict = { self.feats_holder : x,
                   self.labels_holder : y,
@@ -325,7 +325,7 @@ class NNTrainer(object):
         _, loss = self.sess.run([self.train_op, self.loss], feed_dict = feed_dict)
 
       batch_frames = train_gen.get_last_batch_frames()
-      sum_avg_loss += loss / batch_frames
+      sum_avg_loss += loss
       sum_frames += batch_frames
       duration = time.time() - start_time
       count_steps += 1
@@ -380,7 +380,7 @@ class NNTrainer(object):
     start_time = time.time()
     while(True):
 
-      x, y = train_gen.get_batch()
+      x, y = train_gen.get_batch_frames()
 
       if x is None:   # no more data for training
         break
@@ -399,7 +399,7 @@ class NNTrainer(object):
         _, loss = self.sess.run([self.train_op, self.loss], feed_dict = feed_dict)
 
       batch_frames = train_gen.get_last_batch_frames()
-      sum_avg_loss += loss / batch_frames
+      sum_avg_loss += loss
       sum_frames += batch_frames
       duration = time.time() - start_time
       count_steps += 1
@@ -455,8 +455,8 @@ class NNTrainer(object):
     start_time = time.time()
     while(True):
 
-      x, y = train_gen.get_batch()
-      x_aux, y_aux = aux_gen.get_batch()
+      x, y = train_gen.get_batch_frames()
+      x_aux, y_aux = aux_gen.get_batch_frames()
 
       if x is None:   # no more data for training
         break
@@ -480,8 +480,8 @@ class NNTrainer(object):
       _, loss_aux = self.sess.run([self.train_op[1], self.loss], feed_dict = feed_dict_aux)
 
       batch_frames = train_gen.get_last_batch_frames()
-      sum_avg_loss += loss / batch_frames
-      sum_avg_loss_aux += loss_aux / batch_frames
+      sum_avg_loss += loss
+      sum_avg_loss_aux += loss_aux
 
       sum_frames += batch_frames
       duration = time.time() - start_time
@@ -524,6 +524,15 @@ class NNTrainer(object):
     return avg_loss, avg_acc_str
 
 
+  def predict(self, feats, take_log = True):
+    if self.arch == 'dnn':
+      posts = self.predict_dnn(feats, take_log)
+    elif self.arch == 'lstm':
+      posts = self.predict_lstm(feats, take_log)
+
+    return posts
+
+
   def patch_to_batches(self, feats):
     ''' patch data so that it matches our batch_size'''
     if len(feats) % self.batch_size == 0:
@@ -534,7 +543,13 @@ class NNTrainer(object):
     return feats_padded
       
 
-  def predict(self, feats, take_log = True):
+  def predict_dnn(self, feats, take_log = True):
+    '''
+    args: 
+      feats: np 2-d array of size[num_frames, feat_dim]
+    output:
+      posts: np 2-d array of size[num_frames, num_targets]
+    '''
     posts = []
     for i in range(math.ceil(len(feats) / self.batch_size)):
       batch_start = i*self.batch_size
@@ -560,5 +575,90 @@ class NNTrainer(object):
       posts.append(batch_posts)
 
     posts = np.vstack(posts)
+
+    return posts[0:len(feats),:]
+
+  
+  def pack_utterance(self, feats):
+    '''
+    args:
+      feats: list of array, i.e. matrix of size [num_frames, feat_dim]
+    output:
+      feat_packs: np 3-d array of size [num_batches, max_length, feat_dim]
+      seq_length: np array of size [num_batches]
+    '''
+    max_length = self.max_length
+    start_index = 0
+    feats_packed = []
+    seq_length = []
+    post_pick = []
+    pick_start = 0
+    while start_index + max_length < len(feats):
+      end_index = start_index + max_length
+      feats_packed.append(feats[start_index:end_index])
+      seq_length.append(max_length)
+      post_pick.append([pick_start, (self.max_length + self.out_window) // 2])
+      # only the first window starts from 0, all others start from (max_length - out_window) / 2
+      pick_start = (self.max_length - self.out_window) // 2      
+      start_index += self.out_window
+
+    num_zero = max_length + start_index - len(feats)
+    zeros2pad = np.zeros((num_zero, len(feats[0])))
+    feats_packed.append(np.concatenate((feats[start_index:], zeros2pad)))
+    seq_length.append(len(feats) - start_index)
+    # our last window goes till the end of the utterance
+    post_pick.append([pick_start, len(feats) - start_index])
+
+    # now we need to pad more zeros to fit the place holder
+    baches2pad = self.batch_size - len(feats_packed) % self.batch_size
+    if baches2pad != 0:
+      zeros2pad = np.zeros((max_length, len(feats[0])))
+      for i in range(baches2pad):
+        feats_packed.append(zeros2pad)
+        seq_length.append(0)
+        post_pick.append([0, 0])
+
+    feats_packed = np.array(feats_packed)
+    seq_length = np.array(seq_length)
+
+    return feats_packed, seq_length, post_pick
+
+
+  def predict_lstm(self, feats, take_log = True):
+    '''
+    we need a sliding window to generate frame posteriors
+
+    args: 
+      feats: np 2-d array of size[num_frames, feat_dim]
+    output:
+      posts: np 2-d array of size[num_frames, num_targets]
+    '''
+    # for every chunk, we only output these many posteriors, use a rolling window to process the whole utterance
+    self.out_window = self.max_length // 2   
+
+    feats_packed, seq_length, post_pick = self.pack_utterance(feats)
+
+    posts = []
+    assert len(feats_packed) % self.batch_size == 0
+    for i in range(len(feats_packed) // self.batch_size):
+      batch_start = i*self.batch_size
+      batch_end = (i+1)*self.batch_size
+      feats_batch = feats_packed[batch_start:batch_end, :]
+      seq_length_batch = seq_length[batch_start:batch_end]
+
+      feed_dict = {self.feats_holder: feats_batch,
+                   self.seq_length_holder: seq_length_batch}
+
+      if take_log:
+        batch_posts = self.sess.run(self.outputs, feed_dict=feed_dict)
+      else:
+        batch_posts = self.sess.run(self.logits, feed_dict=feed_dict)
+      # batch_posts of size [batch_size, max_len, num_targets]
+
+      for piece in range(self.batch_size):
+        if post_pick[piece][0] != post_pick[piece][1]:
+           posts.append(batch_posts[piece, post_pick[piece][0]:post_pick[piece][1]])
+
+    posts = np.concatenate(posts)
 
     return posts[0:len(feats),:]
