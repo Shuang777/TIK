@@ -62,6 +62,7 @@ shutil.copyfile(config_file, exp+'/config')
 config.read(config_file)
 
 nnet_conf = section_config.parse(config.items('nnet'))
+nnet_train_conf = section_config.parse(config.items('nnet-train'))
 optimizer_conf = section_config.parse(config.items('optimizer'))
 scheduler_conf = section_config.parse(config.items('scheduler'))
 feature_conf = section_config.parse(config.items('feature'))
@@ -170,8 +171,13 @@ for i in range(max_iters):
     logger.info("%s skipping... %s trained", log_info, iter_model)
     continue
 
-  loss_tr, acc_tr = nnet.iter_data(exp+'/log/iter%02d.tr.log'%(i+1), tr_gen, learning_rate = current_lr)
-  loss_cv, acc_cv = nnet.iter_data(exp+'/log/iter%02d.cv.log'%(i+1), cv_gen, keep_acc = True)
+  loss_tr, acc_tr = nnet.iter_data(exp+'/log/iter%02d.tr.log'%(i+1), tr_gen, 
+                                   learning_rate = current_lr,
+                                   keep_in_prob = nnet_train_conf.get('keep_in_prob', 1.0),
+                                   keep_out_prob = nnet_train_conf.get('keep_out_prob', 1.0))
+
+  loss_cv, acc_cv = nnet.iter_data(exp+'/log/iter%02d.cv.log'%(i+1), cv_gen, 
+                                   keep_acc = True)
 
   loss_prev = loss
 

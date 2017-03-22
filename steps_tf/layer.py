@@ -61,16 +61,15 @@ def batch_normalization(info, layer_in):
   return layer_out
 
 
-def lstm(info, layer_in, seq_length):
+def lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob):
   info_dict = info2dict(info)
   
   num_cell = int(info_dict['<NumCells>'])
-  keep_in_prob = float(info_dict['<KeepInProb>'])
-  keep_out_prob = float(info_dict['<KeepOutProb>'])
 
   cell = tf.nn.rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
 
-  cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob = keep_in_prob, output_keep_prob=keep_out_prob)
+  cell = tf.nn.rnn_cell.DropoutWrapper(cell = cell, input_keep_prob = keep_in_prob, 
+                                       output_keep_prob = keep_out_prob)
 
   layer_out,_ = tf.nn.dynamic_rnn(cell, 
                   layer_in,
@@ -81,18 +80,18 @@ def lstm(info, layer_in, seq_length):
   return layer_out
 
 
-def blstm(info, layer_in, seq_length):
+def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob):
   info_dict = info2dict(info)
   
   num_cell = int(info_dict['<NumCells>'])
-  keep_in_prob = float(info_dict['<KeepInProb>'])
-  keep_out_prob = float(info_dict['<KeepOutProb>'])
 
   cell_fw = tf.nn.rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
   cell_bw = tf.nn.rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
 
-  cell_fw = tf.nn.rnn_cell.DropoutWrapper(cell=cell_fw, input_keep_prob=keep_in_prob, output_keep_prob=keep_out_prob)
-  cell_bw = tf.nn.rnn_cell.DropoutWrapper(cell=cell_bw, input_keep_prob=keep_in_prob, output_keep_prob=keep_prob)
+  cell_fw = tf.nn.rnn_cell.DropoutWrapper(cell = cell_fw, input_keep_prob = keep_in_prob, 
+                                          output_keep_prob = keep_out_prob)
+  cell_bw = tf.nn.rnn_cell.DropoutWrapper(cell = cell_bw, input_keep_prob = keep_in_prob, 
+                                          output_keep_prob = keep_out_prob)
 
   layer_out,_ = tf.nn.bidirectional_dynamic_rnn(cell_fw, 
                   cell_bw,

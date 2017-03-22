@@ -18,7 +18,8 @@ class NNTrainer(object):
   session is initialized either by read() or by init_nnet().
   '''
 
-  def __init__(self, arch, input_dim, output_dim, batch_size, use_gpu = True, summary_dir = None, max_length = None):
+  def __init__(self, arch, input_dim, output_dim, batch_size, use_gpu = True, 
+               summary_dir = None, max_length = None):
     ''' just some basic config for this trainer '''
     self.arch = arch
     self.input_dim = input_dim
@@ -92,6 +93,8 @@ class NNTrainer(object):
     self.labels_holder = self.graph.get_collection('labels_holder')[0]
     self.seq_length_holder = self.graph.get_collection('seq_length_holder')[0]
     self.mask_holder = self.graph.get_collection('mask_holder')[0]
+    self.keep_in_prob_holder = self.graph.get_collection('keep_in_prob_holder')[0]
+    self.keep_out_prob_holder = self.graph.get_collection('keep_out_prob_holder')[0]
 
 
   def write(self, filename):
@@ -182,8 +185,12 @@ class NNTrainer(object):
       feats_holder, seq_length_holder, mask_holder, labels_holder = nnet.placeholder_lstm(self.input_dim, 
                                                                              self.max_length,
                                                                              self.batch_size)
+      
+      keep_in_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_in_prob')
+      keep_out_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_out_prob')
 
-      logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file)
+      logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, 
+                                   keep_in_prob_holder, keep_out_prob_holder)
 
       outputs = tf.nn.softmax(logits)
       init_all_op = tf.global_variables_initializer()
@@ -194,6 +201,9 @@ class NNTrainer(object):
       tf.add_to_collection('labels_holder', labels_holder)
       tf.add_to_collection('seq_length_holder', seq_length_holder)
       tf.add_to_collection('mask_holder', mask_holder)
+      tf.add_to_collection('keep_in_prob_holder', keep_in_prob_holder)
+      tf.add_to_collection('keep_out_prob_holder', keep_out_prob_holder)
+
     
     assert self.sess == None
     self.set_gpu()
@@ -207,6 +217,8 @@ class NNTrainer(object):
     self.labels_holder = labels_holder
     self.seq_length_holder = seq_length_holder
     self.mask_holder = mask_holder
+    self.keep_in_prob_holder = keep_in_prob_holder
+    self.keep_out_prob_holder = keep_out_prob_holder
 
     if self.summary_dir is not None:
       self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
@@ -264,11 +276,11 @@ class NNTrainer(object):
     self.eval_acc = eval_acc
 
   
-  def prepare_feed(self, train_gen, learning_rate):
+  def prepare_feed(self, train_gen, learning_rate, keep_in_prob, keep_out_prob):
     if self.arch == 'dnn':
       feed_dict, has_data = self.prepare_feed_dnn(train_gen, learning_rate)
     elif self.arch == 'lstm':
-      feed_dict, has_data = self.prepare_feed_lstm(train_gen, learning_rate)
+      feed_dict, has_data = self.prepare_feed_lstm(train_gen, learning_rate, keep_in_prob, keep_out_prob)
 
     return feed_dict, has_data
 
@@ -283,19 +295,22 @@ class NNTrainer(object):
     return feed_dict, x is not None
 
 
-  def prepare_feed_lstm(self, train_gen, learning_rate):
+  def prepare_feed_lstm(self, train_gen, learning_rate, keep_in_prob, keep_out_prob):
     x, y, seq_length, mask = train_gen.get_batch_utterances()
 
     feed_dict = { self.feats_holder : x,
                   self.labels_holder : y,
                   self.seq_length_holder: seq_length,
                   self.mask_holder: mask,
-                  self.learning_rate_holder: learning_rate}
+                  self.learning_rate_holder: learning_rate,
+                  self.keep_in_prob_holder: keep_in_prob,
+                  self.keep_out_prob_holder: keep_out_prob}
 
     return feed_dict, x is not None
     
 
-  def iter_data(self, logfile, train_gen, learning_rate = None, keep_acc = False):
+  def iter_data(self, logfile, train_gen, learning_rate = None, keep_acc = False, 
+                keep_in_prob = 1.0, keep_out_prob = 1.0):
     '''Train/test one iteration; use learning_rate == None to specify test mode'''
 
     assert self.batch_size == train_gen.get_batch_size()
@@ -314,7 +329,7 @@ class NNTrainer(object):
 
     while(True):
 
-      feed_dict, has_data = self.prepare_feed(train_gen, learning_rate)
+      feed_dict, has_data = self.prepare_feed(train_gen, learning_rate, keep_in_prob, keep_out_prob)
 
       if not has_data:   # no more data for training
         break
@@ -647,7 +662,9 @@ class NNTrainer(object):
       seq_length_batch = seq_length[batch_start:batch_end]
 
       feed_dict = {self.feats_holder: feats_batch,
-                   self.seq_length_holder: seq_length_batch}
+                   self.seq_length_holder: seq_length_batch,
+                   self.keep_in_prob_holder: 1.0,
+                   self.keep_out_prob_holder: 1.0}
 
       if take_log:
         batch_posts = self.sess.run(self.outputs, feed_dict=feed_dict)

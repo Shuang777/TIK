@@ -120,7 +120,7 @@ def inference_multi(feats_holders, switch_holders, nnet_proto_file):
   return logits
 
 
-def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file):
+def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, keep_in_prob_holder, keep_out_prob_holder):
   '''
   args:
     feats_holder: np 3-d array of size [num_batch, max_length, feat_dim]
@@ -138,14 +138,16 @@ def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file):
     if line == '</NnetProto>':
       break
     with tf.variable_scope('layer'+str(count_layer)):
-      layer_out = build_layer(line, layer_in, seq_length = seq_length_holder)
+      layer_out = build_layer(line, layer_in, seq_length = seq_length_holder, 
+                              keep_in_prob = keep_in_prob_holder,
+                              keep_out_prob = keep_out_prob_holder)
       layer_in = layer_out
       count_layer += 1
   logits = layer_out
   return logits
 
 
-def build_layer(line, layer_in, seq_length = None):
+def build_layer(line, layer_in, seq_length = None, keep_in_prob = None, keep_out_prob = None):
   layer_type, info = line.split(' ', 1)
   if layer_type == '<AffineTransform>':
     layer_out = layer.affine_transform(info, layer_in)
@@ -164,9 +166,9 @@ def build_layer(line, layer_in, seq_length = None):
   elif layer_type == '<Dropout>':
     layer_out = tf.nn.dropout(layer_in, float(info))
   elif layer_type == '<LSTM>':
-    layer_out = layer.lstm(info, layer_in, seq_length)
+    layer_out = layer.lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob)
   elif layer_type == '<BLSTM>':
-    layer_out = layer.blstm(info, layer_in, seq_length)
+    layer_out = layer.blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob)
 
   return layer_out
 
