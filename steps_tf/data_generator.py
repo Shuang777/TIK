@@ -23,6 +23,9 @@ class DataGenerator:
     self.batch_size = conf.get('batch_size', 256)
     self.splice = conf.get('context_width', 5)
     self.max_length = conf.get('max_length', 2000)
+    self.sliding_window = conf.get('sliding_window', 20)
+    self.jitter_window = conf.get('jitter_window', 0)
+
     self.loop = loop    # keep looping over dataset
     self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
 
@@ -166,6 +169,8 @@ class DataGenerator:
   
   def pack_utt_data(self, features, labels):
     '''
+    for each utterance, we use a rolling window to predict the output posterior. 
+    Reference: Deep Bi-Directional Recurrent Network over Spectral Windows
     input:
       features: list of np 2d-array [num_frames, feat_dim]
       labels: list of np array [num_frames]
@@ -182,20 +187,32 @@ class DataGenerator:
     mask = []
     seq_length = []
     max_length = self.max_length
+    sliding_window = self.sliding_window
+    jitter_window = self.jitter_window
 
     for feat, lab in zip(features, labels):
 
       assert len(feat) == len(lab)
       start_index = 0
 
+      pick_start = 0
+      pick_end = (max_length + jitter_window) // 2
       while start_index + max_length < len(feat):
         # cut utterances into pieces
         end_index = start_index + max_length
         features_pad.append(feat[start_index:end_index])
         labels_pad.append(lab[start_index:end_index])
         seq_length.append(max_length)
-        mask.append(numpy.ones(max_length))
-        start_index += max_length
+        if jitter_window != 0:
+          this_mask = numpy.zeros(max_length)
+          this_mask[pick_start:pick_end] = 1
+          mask.append(this_mask)
+          # only the first window starts from 0, all others start from (max_length - jitter_window) / 2
+          pick_start = (max_length - jitter_window) // 2
+          start_index += sliding_window
+        else:
+          mask.append(numpy.ones(max_length))
+          start_index += sliding_window
 
       # last part, pad zero
       num_zero = max_length + start_index - len(feat)
@@ -203,7 +220,13 @@ class DataGenerator:
       features_pad.append(numpy.concatenate((feat[start_index:], zeros2pad)))
       labels_pad.append(numpy.append(lab[start_index:], numpy.zeros(num_zero)))
       seq_length.append(len(feat) - start_index)
-      mask.append(numpy.append(numpy.ones(len(feat) - start_index), numpy.zeros(num_zero)))
+      if jitter_window != 0:
+        # our last window goes till the end of the utterance
+        this_mask = numpy.zeros(max_length)
+        this_mask[pick_start:(len(feat) - start_index)] = 1
+        mask.append(this_mask)
+      else:
+        mask.append(numpy.append(numpy.ones(len(feat) - start_index), numpy.zeros(num_zero)))
 
     features_pad = numpy.array(features_pad)
     labels_pad = numpy.array(labels_pad)
@@ -255,7 +278,7 @@ class DataGenerator:
     mask_mini = self.mask[self.batch_pointer:self.batch_pointer+self.batch_size]
 
     self.batch_pointer += self.batch_size
-    self.last_batch_frames = seq_mini.sum()
+    self.last_batch_frames = mask_mini.sum()
 
     return x_mini, y_mini, seq_mini, mask_mini
 

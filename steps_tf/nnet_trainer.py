@@ -19,13 +19,14 @@ class NNTrainer(object):
   '''
 
   def __init__(self, arch, input_dim, output_dim, batch_size, use_gpu = True, 
-               summary_dir = None, max_length = None):
+               summary_dir = None, max_length = None, jitter_window = None):
     ''' just some basic config for this trainer '''
     self.arch = arch
     self.input_dim = input_dim
     self.output_dim = output_dim
     self.batch_size = batch_size
     self.max_length = max_length    # used for lstm
+    self.jitter_window = jitter_window # used for jitter training
     self.sess = None
     self.use_gpu = use_gpu
     self.summary_dir = summary_dir
@@ -104,16 +105,18 @@ class NNTrainer(object):
       saver.save(self.sess, filename)
 
 
-  def set_gpu(self):
+  def set_gpu(self, gpu_id = None):
     if self.use_gpu:
-      p1 = Popen ('pick-gpu', stdout=PIPE)
-      gpu_id = int(p1.stdout.read())
+      if gpu_id is None:
+        p1 = Popen ('pick-gpu', stdout=PIPE)
+        gpu_id = int(p1.stdout.read())
       if gpu_id == -1:
         raise RuntimeError("Unable to pick gpu")
-      logging.info("Selecting gpu %d", gpu_id)
       os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
     else:
       os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
+    return gpu_id
 
 
   def get_num_subnnets(self):
@@ -603,19 +606,21 @@ class NNTrainer(object):
       seq_length: np array of size [num_batches]
     '''
     max_length = self.max_length
+    jitter_window = self.jitter_window
     start_index = 0
     feats_packed = []
     seq_length = []
     post_pick = []
     pick_start = 0
+    pick_end = (max_length + jitter_window) // 2
     while start_index + max_length < len(feats):
       end_index = start_index + max_length
       feats_packed.append(feats[start_index:end_index])
       seq_length.append(max_length)
-      post_pick.append([pick_start, (self.max_length + self.out_window) // 2])
-      # only the first window starts from 0, all others start from (max_length - out_window) / 2
-      pick_start = (self.max_length - self.out_window) // 2      
-      start_index += self.out_window
+      post_pick.append([pick_start, pick_end])
+      # only the first window starts from 0, all others start from (max_length - jittter_window) / 2
+      pick_start = (max_length - jitter_window) // 2      
+      start_index += jitter_window
 
     num_zero = max_length + start_index - len(feats)
     zeros2pad = np.zeros((num_zero, len(feats[0])))
@@ -624,7 +629,7 @@ class NNTrainer(object):
     # our last window goes till the end of the utterance
     post_pick.append([pick_start, len(feats) - start_index])
 
-    # now we need to pad more zeros to fit the place holder
+    # now we need to pad more zeros to fit the place holder, because each place holder can only host [ batch_size x max_length x feat_dim ] this many data
     baches2pad = self.batch_size - len(feats_packed) % self.batch_size
     if baches2pad != 0:
       zeros2pad = np.zeros((max_length, len(feats[0])))
@@ -648,9 +653,7 @@ class NNTrainer(object):
     output:
       posts: np 2-d array of size[num_frames, num_targets]
     '''
-    # for every chunk, we only output these many posteriors, use a rolling window to process the whole utterance
-    self.out_window = self.max_length // 2   
-
+    # we use a rolling window to process the whole utterance
     feats_packed, seq_length, post_pick = self.pack_utterance(feats)
 
     posts = []
@@ -674,7 +677,8 @@ class NNTrainer(object):
 
       for piece in range(self.batch_size):
         if post_pick[piece][0] != post_pick[piece][1]:
-           posts.append(batch_posts[piece, post_pick[piece][0]:post_pick[piece][1]])
+          # post_pick specifies the index of posterior to pick out to form decoding sequence
+          posts.append(batch_posts[piece, post_pick[piece][0]:post_pick[piece][1]])
 
     posts = np.concatenate(posts)
 

@@ -29,6 +29,17 @@ def match_iter_model(directory, model_base):
     if fnmatch.fnmatch(file, model_base+'*') and not file.endswith(".meta"):
       return file
 
+def get_alignments(exp, ali_dir):
+  p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
+               'ark,t:-'], stdout=PIPE)
+  ali_labels = {}
+  for line in p1.stdout:
+    line = line.split()
+    utt = line[0].decode(sys.stdout.encoding)
+    ali_labels[utt] = [int(i) for i in line[1:]]
+  return ali_labels
+
+
 if __name__ != '__main__':
   raise ImportError ('This script can only be run, and can\'t be imported')
 
@@ -58,30 +69,32 @@ Popen (['copy-transition-model', '--binary=false', gmm+'/final.mdl' ,exp+'/final
 
 # read config file
 config = configparser.ConfigParser()
-shutil.copyfile(config_file, exp+'/config')
+if os.path.isfile(exp+'/config'):
+  logger.info("Loading config file from original exp directory")
+  config_file = exp+'/config'
+else:
+  logger.info("Copying config file to exp directory")
+  shutil.copyfile(config_file, exp+'/config')
 config.read(config_file)
 
+# parse config sections
 nnet_conf = section_config.parse(config.items('nnet'))
 nnet_train_conf = section_config.parse(config.items('nnet-train'))
 optimizer_conf = section_config.parse(config.items('optimizer'))
 scheduler_conf = section_config.parse(config.items('scheduler'))
 feature_conf = section_config.parse(config.items('feature'))
+
 nnet_proto_file = config.get('general', 'nnet_proto', fallback = None)
 summary_dir = config.get('general', 'summary_dir', fallback = None)
 summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
 
-# prepare data
+# separate data into 10% cv and 90% training
 Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
 # Generate pdf indices
-p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
-             'ark,t:-'], stdout=PIPE)
-ali_labels = {}
-for line in p1.stdout:
-  line = line.split()
-  utt = line[0].decode(sys.stdout.encoding)
-  ali_labels[utt] = [int(i) for i in line[1:]]
+ali_labels = get_alignments(exp, ali_dir)
 
+# prepare training data generator
 if nnet_conf['nnet_arch'] == 'lstm':
   data_gen_type = 'utterance'
 elif nnet_conf['nnet_arch'] == 'dnn':
@@ -90,8 +103,6 @@ elif nnet_conf['nnet_arch'] == 'dnn':
 tr_gen = DataGenerator (data_gen_type, exp+'/tr90', ali_labels, ali_dir, 
                         exp, 'train', feature_conf, shuffle=True)
 
-a,b,c,d = tr_gen.get_batch_utterances()
-
 cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir, 
                         exp, 'cv', feature_conf)
 
@@ -99,6 +110,8 @@ cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir,
 input_dim = tr_gen.get_feat_dim()
 output_dim = get_model_pdfs(gmm)
 max_length = feature_conf.get('max_length', None)
+sliding_window = feature_conf.get('sliding_window', None)
+jitter_window = feature_conf.get('jitter_window', None)
 
 # save alignment priors
 tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
@@ -106,7 +119,12 @@ tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
 # save input_dim and output_dim
 open(exp+'/input_dim', 'w').write(str(input_dim))
 open(exp+'/output_dim', 'w').write(str(output_dim))
-open(exp+'/max_length', 'w').write(str(max_length))
+if max_length is not None:
+  open(exp+'/max_length', 'w').write(str(max_length))
+if sliding_window is not None:
+  open(exp+'/sliding_window', 'w').write(str(sliding_window))
+if jitter_window is not None:
+  open(exp+'/jitter_window', 'w').write(str(jitter_window))
 
 if 'init_file' in scheduler_conf:
   logger.info("Initializing graph using %s", scheduler_conf['init_file'])
@@ -114,6 +132,7 @@ if 'init_file' in scheduler_conf:
 nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
                  feature_conf['batch_size'], summary_dir = summary_dir,
                  max_length = max_length)
+
 mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):

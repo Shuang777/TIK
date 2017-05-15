@@ -13,6 +13,14 @@ from signal import signal, SIGPIPE, SIG_DFL
 from nnet_trainer import NNTrainer
 import section_config
 
+
+def read_int_or_none(file_name):
+  if os.path.isfile(file_name):
+    return int(open(file_name).read())
+  else:
+    return None
+
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stderr))
@@ -41,12 +49,9 @@ srcdir = os.path.dirname(args.model_file)
 
 input_dim = int(open(srcdir+'/input_dim').read())
 output_dim = int(open(srcdir+'/output_dim').read())
+max_length = feature_conf.get('max_length', None)
+jitter_window = feature_conf.get('jitter_window', None)
 splice = feature_conf['context_width']
-
-if os.path.isfile(srcdir+'/max_length'):
-  max_length = int(open(srcdir+'/max_length').read())
-else:
-  max_length = None
 
 # set gpu
 logger.info("use-gpu: %s", str(args.use_gpu))
@@ -54,7 +59,8 @@ logger.info("use-gpu: %s", str(args.use_gpu))
 logger.info("initializing the graph")
 nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
                  feature_conf['batch_size'], use_gpu = False,
-                 max_length = max_length)
+                 max_length = max_length,
+                 jitter_window = jitter_window)
 
 if os.path.exists(srcdir + '/multi.count'):
   num_multi = int(open(srcdir + '/multi.count').read())

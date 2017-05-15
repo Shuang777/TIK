@@ -11,7 +11,7 @@ def parse(config_tuple):
   for i in config_dict.keys():
     if i in ['min_iters', 'keep_lr_iters', 'max_iters', 'context_width', 
              'batch_size', 'hidden_units', 'num_hidden_layers', 'num_cells',
-             'max_length']:
+             'max_length', 'sliding_window', 'jitter_window', 'bottleneck_dim']:
       config_parsed[i] = int(config_dict[i])
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
              'initial_learning_rate', 'momentum', 'keep_prob', 'keep_in_prob', 'keep_out_prob']:
