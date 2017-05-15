@@ -35,7 +35,20 @@ def affine_transform(info, layer_in):
   return layer_out
 
 
-#def linear_transform(info):
+def linear_transform(info, layer_in):
+  info_dict = info2dict(info)
+  
+  input_dim = int(info_dict['<InputDim>'])
+  output_dim = int(info_dict['<OutputDim>'])
+  stddev = float(info_dict['<ParamStddev>'])
+
+  weights = tf.Variable(tf.truncated_normal([input_dim, output_dim],
+                          stddev = stddev),
+                        name = 'weights')
+
+  layer_out = tf.matmul(layer_in, weights)
+
+  return layer_out
 
 
 def batch_normalization(info, layer_in):
