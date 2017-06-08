@@ -24,7 +24,7 @@ norm_vars=
 add_deltas=
 
 utt_mode=false
-
+model_name=final.model.txt
 # End configuration
 
 echo "$0 $@"  # Print the command line for logging
@@ -83,7 +83,7 @@ if [ ! -z "$transform_dir" ]; then
     cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$transform_dir/trans.JOB ark:- ark:- |"
   fi
 fi
-cmds="$cmds python3 steps_tf/nnet_forward.py $srcdir/config $srcdir/final.model.txt $srcdir/ali_train_pdf.counts |"
+cmds="$cmds python3 steps_tf/nnet_forward.py $srcdir/config $srcdir/$model_name $srcdir/ali_train_pdf.counts |"
 
 $cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
   $cmds latgen-faster-mapped --max-active=$max_active --beam=$beam --lattice-beam=$latbeam \

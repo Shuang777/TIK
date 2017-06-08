@@ -79,9 +79,9 @@ def lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob):
   
   num_cell = int(info_dict['<NumCells>'])
 
-  cell = tf.nn.rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
+  cell = tf.contrib.rnn.core_rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
 
-  cell = tf.nn.rnn_cell.DropoutWrapper(cell = cell, input_keep_prob = keep_in_prob, 
+  cell = tf.contrib.rnn.core_rnn_cell.DropoutWrapper(cell = cell, input_keep_prob = keep_in_prob, 
                                        output_keep_prob = keep_out_prob)
 
   layer_out,_ = tf.nn.dynamic_rnn(cell, 
@@ -98,12 +98,12 @@ def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob):
   
   num_cell = int(info_dict['<NumCells>'])
 
-  cell_fw = tf.nn.rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
-  cell_bw = tf.nn.rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
+  cell_fw = tf.contrib.rnn.core_rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
+  cell_bw = tf.contrib.rnn.core_rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
 
-  cell_fw = tf.nn.rnn_cell.DropoutWrapper(cell = cell_fw, input_keep_prob = keep_in_prob, 
+  cell_fw = tf.contrib.rnn.core_rnn_cell.DropoutWrapper(cell = cell_fw, input_keep_prob = keep_in_prob, 
                                           output_keep_prob = keep_out_prob)
-  cell_bw = tf.nn.rnn_cell.DropoutWrapper(cell = cell_bw, input_keep_prob = keep_in_prob, 
+  cell_bw = tf.contrib.rnn.core_rnn_cell.DropoutWrapper(cell = cell_bw, input_keep_prob = keep_in_prob, 
                                           output_keep_prob = keep_out_prob)
 
   layer_out,_ = tf.nn.bidirectional_dynamic_rnn(cell_fw, 

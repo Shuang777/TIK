@@ -230,7 +230,7 @@ def loss_dnn(logits, labels):
 
   labels = tf.to_int64(labels)
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-      logits, labels, name='xentropy')
+      logits=logits, labels=labels, name='xentropy')
   loss = tf.reduce_mean(cross_entropy, name='xentropy-mean')
   return loss
 
@@ -244,7 +244,7 @@ def loss_lstm(logits, labels, mask):
   '''
   labels = tf.to_int64(labels)
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-      logits, labels, name='xentropy')
+      logits=logits, labels=labels, name='xentropy')
   masked_cross_entropy = tf.multiply(cross_entropy, mask)
   num_elements = tf.reduce_prod(mask.get_shape())
   num_counts = tf.reduce_sum(mask)
