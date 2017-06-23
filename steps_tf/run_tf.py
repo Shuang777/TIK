@@ -112,6 +112,7 @@ output_dim = get_model_pdfs(gmm)
 max_length = feature_conf.get('max_length', None)
 sliding_window = feature_conf.get('sliding_window', None)
 jitter_window = feature_conf.get('jitter_window', None)
+num_gpus = nnet_train_conf.get('num_gpus', 1)
 
 # save alignment priors
 tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
@@ -130,8 +131,8 @@ if 'init_file' in scheduler_conf:
   logger.info("Initializing graph using %s", scheduler_conf['init_file'])
 
 nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
-                 feature_conf['batch_size'], summary_dir = summary_dir,
-                 max_length = max_length)
+                 feature_conf['batch_size'], num_gpus = num_gpus,
+                 summary_dir = summary_dir, max_length = max_length)
 
 mlp_init = exp+'/model.init'
 
