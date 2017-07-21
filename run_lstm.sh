@@ -22,13 +22,13 @@ train_ali=exp/tri4_ali_nodup
 
 lang=data/lang_sw1_tg
 gmm=exp/tri4
-exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_jitter_re
+exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_batch64_jitter_re
 #exp=exp/tflstm_5a_10ks_1024x4_win20_lr0.4_jitter
 #exp=exp/tflstm_5a_256x4_lr0.04_drop0.8
 #exp=exp/tflstm_5a_256x4_lr0.01
 #exp=exp/tflstm_5a_1024x4_win20_lr0.1_jitter
-exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_batch64_jitter
-exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_batch64_jitter_more
+#exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_batch32_jitter_gpu2
+#exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_batch64_jitter_more
 #exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_jitter_re_con
 
 config=config/swbd_lstm_jitter.cfg
