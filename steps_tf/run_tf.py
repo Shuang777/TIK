@@ -26,7 +26,7 @@ def get_model_pdfs (gmm):
 
 def match_iter_model(directory, model_base):
   for file in os.listdir(directory):
-    if fnmatch.fnmatch(file, model_base+'*') and not file.endswith(".meta"):
+    if fnmatch.fnmatch(file, model_base+'*') and file.endswith(".index"):
       return file
 
 def get_alignments(exp, ali_dir):
@@ -100,11 +100,13 @@ if nnet_conf['nnet_arch'] == 'lstm':
 elif nnet_conf['nnet_arch'] == 'dnn':
   data_gen_type = 'frame'
 
+num_gpus = nnet_train_conf.get('num_gpus', 1)
+
 tr_gen = DataGenerator (data_gen_type, exp+'/tr90', ali_labels, ali_dir, 
-                        exp, 'train', feature_conf, shuffle=True)
+                        exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
 
 cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir, 
-                        exp, 'cv', feature_conf)
+                        exp, 'cv', feature_conf, num_gpus = num_gpus)
 
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
@@ -112,7 +114,6 @@ output_dim = get_model_pdfs(gmm)
 max_length = feature_conf.get('max_length', None)
 sliding_window = feature_conf.get('sliding_window', None)
 jitter_window = feature_conf.get('jitter_window', None)
-num_gpus = nnet_train_conf.get('num_gpus', 1)
 
 # save alignment priors
 tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
@@ -151,7 +152,7 @@ else:
   else:
     shutil.copyfile(nnet_proto_file, exp+'/nnet.proto')
 
-  nnet.init_nnet(nnet_proto_file, init_file = scheduler_conf.get('init_file', None))
+  nnet.init_nnet(nnet_proto_file)
 
   logger.info("initialize model to %s", mlp_init)
   nnet.write(mlp_init)
@@ -182,7 +183,7 @@ loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, keep_acc = True)
 logger.info("ITERATION 0: loss on cv %.3f, acc_cv %s", loss, acc)
 
 for i in range(max_iters):
-  log_info = "ITERATION %d:" % (i+1)
+  log_info = "ITERATION %d:" % (i+1) 
 
   mlp_current_base = "model_iter%02d" % (i+1)
 
@@ -216,6 +217,7 @@ for i in range(max_iters):
     nnet.write(mlp_rej)
     open(exp+'/iter%02d.model.txt'%(i+1), 'w').write(mlp_rej)
     logger.info("%s nnet rejected %s, acc_tr %s, acc_cv %s", log_info, mlp_rej.split('/')[-1], acc_tr, acc_cv)
+    nnet.read(mlp_best)
 
   open(exp + '/.done_iter%02d'%(i+1), 'w').write("")
   

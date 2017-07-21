@@ -70,25 +70,25 @@ done
 
 if [ $stage -le 0 ]; then
 ## Set up the features
-cmds="apply-cmvn --utt2spk=ark:$sdata/JOB/utt2spk scp:$sdata/JOB/cmvn.scp scp:$sdata/JOB/feats.scp ark:- |"
-cmds="$cmds splice-feats $splice_opts ark:- ark:- |"
-cmds="$cmds transform-feats $srcdir/final.mat ark:- ark:- |"
-if [ ! -z "$transform_dir" ]; then
-  nj_orig=$(cat $transform_dir/num_jobs)
-  if [ $nj_orig != $nj ]; then
-    for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
-      copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
-    cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$dir/trans.ark ark:- ark:- |"
-  else
-    cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$transform_dir/trans.JOB ark:- ark:- |"
+  cmds="apply-cmvn --utt2spk=ark:$sdata/JOB/utt2spk scp:$sdata/JOB/cmvn.scp scp:$sdata/JOB/feats.scp ark:- |"
+  cmds="$cmds splice-feats $splice_opts ark:- ark:- |"
+  cmds="$cmds transform-feats $srcdir/final.mat ark:- ark:- |"
+  if [ ! -z "$transform_dir" ]; then
+    nj_orig=$(cat $transform_dir/num_jobs)
+    if [ $nj_orig != $nj ]; then
+      for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
+        copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
+      cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$dir/trans.ark ark:- ark:- |"
+    else
+      cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$transform_dir/trans.JOB ark:- ark:- |"
+    fi
   fi
-fi
-cmds="$cmds python3 steps_tf/nnet_forward.py $srcdir/config $srcdir/$model_name $srcdir/ali_train_pdf.counts |"
+  cmds="$cmds python3 steps_tf/nnet_forward.py $srcdir/config $srcdir/$model_name $srcdir/ali_train_pdf.counts |"
 
-$cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
-  $cmds latgen-faster-mapped --max-active=$max_active --beam=$beam --lattice-beam=$latbeam \
-    --acoustic-scale=$acwt --allow-partial=true --word-symbol-table=$graphdir/words.txt \
-    $srcdir/final.mdl $graphdir/HCLG.fst ark:- "ark:|gzip -c > $dir/lat.JOB.gz"
+  $cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
+    $cmds latgen-faster-mapped --max-active=$max_active --beam=$beam --lattice-beam=$latbeam \
+      --acoustic-scale=$acwt --allow-partial=true --word-symbol-table=$graphdir/words.txt \
+      $srcdir/final.mdl $graphdir/HCLG.fst ark:- "ark:|gzip -c > $dir/lat.JOB.gz"
 fi
 
 if ! $skip_scoring ; then

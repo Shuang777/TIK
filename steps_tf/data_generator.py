@@ -9,18 +9,15 @@ import math
 
 class DataGenerator:
   def __init__ (self, data_gen_type, data, labels, 
-                trans_dir, exp, name, 
-                conf, 
-                seed=777, 
-                shuffle=False,
-                loop=False):
+                trans_dir, exp, name, conf, 
+                seed=777, shuffle=False, loop=False, num_gpus = 1):
     
     self.data_gen_type = data_gen_type
     self.data = data
     self.labels = labels
     self.exp = exp
     self.name = name
-    self.batch_size = conf.get('batch_size', 256)
+    self.batch_size = conf.get('batch_size', 256) * num_gpus
     self.splice = conf.get('context_width', 5)
     self.max_length = conf.get('max_length', 2000)
     self.sliding_window = conf.get('sliding_window', 20)

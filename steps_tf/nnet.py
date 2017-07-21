@@ -31,7 +31,7 @@ def placeholder_lstm(input_dim, max_length, batch_size):
   return feats_holder, seq_length_holder, mask_holder, labels_holder
 
 
-def inference_dnn(feats_holder, nnet_proto_file):
+def inference_dnn(feats_holder, nnet_proto_file, reuse = False):
   '''
   args:
     feats_holder: np 2-d array of size [num_batch, feat_dim]
@@ -48,8 +48,8 @@ def inference_dnn(feats_holder, nnet_proto_file):
     line = line.strip()
     if line == '</NnetProto>':
       break
-    with tf.variable_scope('layer'+str(count_layer)):
-      layer_out = build_layer(line, layer_in)
+    with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+      layer_out = build_layer(line, layer_in, reuse = reuse)
       layer_in = layer_out
       count_layer += 1
   logits = layer_out
@@ -66,61 +66,8 @@ def scan_subnnet(nnet_proto_file):
   return count_subnnet
 
 
-def inference_multi(feats_holders, switch_holders, nnet_proto_file):
-  nnet_proto = open(nnet_proto_file, 'r')
-  line = nnet_proto.readline().strip()
-  assert line == '<NnetProto>'
-  line = nnet_proto.readline().strip()
-  assert line == '<MultiSwitch>'
-  count_subnnet = 0
-
-  # subnnet part
-  line = nnet_proto.readline().strip()
-  subnnet_outs = []
-  while line:
-    if line == '<SubNnet>':
-      layer_in = feats_holders[count_subnnet]
-      line = nnet_proto.readline().strip()
-      with tf.variable_scope('layer0_sub'+str(count_subnnet)):
-        while line:
-          layer_out = build_layer(line, layer_in)
-          layer_in = layer_out
-          line = nnet_proto.readline().strip()
-          if line == '</SubNnet>':
-            subnnet_outs.append(layer_out)
-            break
-    if line == '</SubNnet>':
-      count_subnnet += 1
-    elif line == '</MultiSwitch>':
-    #done with subnnet part
-      break;
-    line = nnet_proto.readline().strip()
-
-  # merge part
-  with tf.variable_scope('layer_merge'):
-    for i in range(count_subnnet):
-      if i == 0:
-        layer_out = tf.scalar_mul(switch_holders[0], subnnet_outs[0])
-      else:
-        layer_out = tf.add(layer_out, tf.scalar_mul(switch_holders[i], subnnet_outs[i]))
-  
-  # shared hidden part
-  count_layer = 1
-  layer_in = layer_out
-  with tf.variable_scope('layer_shared'):
-    for line in nnet_proto:
-      line = line.strip()
-      if line == '</NnetProto>':
-        break
-      with tf.variable_scope('layer'+str(count_layer)):
-        layer_out = build_layer(line, layer_in)
-      layer_in = layer_out
-      count_layer += 1
-  logits = layer_out
-  return logits
-
-
-def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, keep_in_prob_holder, keep_out_prob_holder):
+def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, 
+                   keep_in_prob_holder, keep_out_prob_holder, reuse = False):
   '''
   args:
     feats_holder: np 3-d array of size [num_batch, max_length, feat_dim]
@@ -137,17 +84,18 @@ def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, keep_in_pro
     line = line.strip()
     if line == '</NnetProto>':
       break
-    with tf.variable_scope('layer'+str(count_layer)):
+    with tf.variable_scope('layer'+str(count_layer), reuse=reuse):
       layer_out = build_layer(line, layer_in, seq_length = seq_length_holder, 
                               keep_in_prob = keep_in_prob_holder,
-                              keep_out_prob = keep_out_prob_holder)
+                              keep_out_prob = keep_out_prob_holder,
+                              reuse = reuse)
       layer_in = layer_out
       count_layer += 1
   logits = layer_out
   return logits
 
 
-def build_layer(line, layer_in, seq_length = None, keep_in_prob = None, keep_out_prob = None):
+def build_layer(line, layer_in, seq_length = None, keep_in_prob = None, keep_out_prob = None, reuse = False):
   layer_type, info = line.split(' ', 1)
   if layer_type == '<AffineTransform>':
     layer_out = layer.affine_transform(info, layer_in)
@@ -166,9 +114,9 @@ def build_layer(line, layer_in, seq_length = None, keep_in_prob = None, keep_out
   elif layer_type == '<Dropout>':
     layer_out = tf.nn.dropout(layer_in, float(info))
   elif layer_type == '<LSTM>':
-    layer_out = layer.lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob)
+    layer_out = layer.lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = reuse)
   elif layer_type == '<BLSTM>':
-    layer_out = layer.blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob)
+    layer_out = layer.blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = reuse)
 
   return layer_out
 
@@ -274,7 +222,7 @@ def training(op_conf, loss, learning_rate_holder, scopes = None):
   return train_op
 
 
-def evaluation(logits, labels):
+def evaluation_dnn(logits, labels):
 
   correct = tf.nn.in_top_k(logits, labels, 1)
   return tf.reduce_sum(tf.cast(correct, tf.int32))
@@ -313,6 +261,8 @@ def average_gradients(tower_grads):
     #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
     grads = []
     for g, _ in grad_and_vars:
+      if g is None:
+        print("here") 
       # Add 0 dimension to the gradients to represent the tower.
       expanded_g = tf.expand_dims(g, 0)
 

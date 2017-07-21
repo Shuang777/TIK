@@ -44,6 +44,7 @@ config.read(args.config_file)
 feature_conf = section_config.parse(config.items('feature'))
 nnet_conf = section_config.parse(config.items('nnet'))
 optimizer_conf = section_config.parse(config.items('optimizer'))
+nnet_train_conf = section_config.parse(config.items('nnet-train'))
 
 srcdir = os.path.dirname(args.model_file)
 
@@ -55,21 +56,17 @@ splice = feature_conf['context_width']
 
 # set gpu
 logger.info("use-gpu: %s", str(args.use_gpu))
+num_gpus = nnet_train_conf.get('num_gpus', 1)
 
 logger.info("initializing the graph")
 nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
-                 feature_conf['batch_size'], use_gpu = False,
-                 max_length = max_length,
+                 feature_conf['batch_size'] * num_gpus, num_gpus = num_gpus,
+                 max_length = max_length, use_gpu = args.use_gpu,
                  jitter_window = jitter_window)
-
-if os.path.exists(srcdir + '/multi.count'):
-  num_multi = int(open(srcdir + '/multi.count').read())
-else:
-  num_multi = 0
 
 logger.info("loading the model %s", args.model_file)
 model_name=open(args.model_file, 'r').read()
-nnet.read(model_name, num_multi = num_multi)
+nnet.read(model_name)
 
 prior_counts = np.genfromtxt (args.prior_counts_file)
 priors = prior_counts / prior_counts.sum()

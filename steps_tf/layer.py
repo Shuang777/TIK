@@ -16,13 +16,13 @@ def affine_transform(info, layer_in):
   minval = float(info_dict['<BiasMean>']) - float(info_dict['<BiasRange>'])/2
   maxval = float(info_dict['<BiasMean>']) + float(info_dict['<BiasRange>'])/2
 
-  weights = tf.Variable(tf.truncated_normal([input_dim, output_dim],
-                          stddev = stddev),
-                        name = 'weights')
-  biases = tf.Variable(tf.random_uniform([output_dim], 
-                         minval = minval, 
-                         maxval = maxval),
-                       name = 'biases')
+  truncated_normal_initializer = tf.truncated_normal_initializer(mean = 0, stddev = stddev)
+  random_uniform_initializer = tf.random_uniform_initializer(minval = minval, maxval = maxval)
+
+  weights = tf.get_variable(name = 'weights', shape = [input_dim, output_dim],
+                            initializer = truncated_normal_initializer)
+  biases = tf.get_variable(name = 'biases', shape = [output_dim], 
+                           initializer = random_uniform_initializer)
 
   if len(layer_in.get_shape()) == 2:
     layer_out = tf.matmul(layer_in, weights) + biases
@@ -42,9 +42,9 @@ def linear_transform(info, layer_in):
   output_dim = int(info_dict['<OutputDim>'])
   stddev = float(info_dict['<ParamStddev>'])
 
-  weights = tf.Variable(tf.truncated_normal([input_dim, output_dim],
-                          stddev = stddev),
-                        name = 'weights')
+  truncated_normal_initializer = tf.truncated_normal_initializer(mean = 0, stddev = stddev)
+  weights = tf.get_variable(name = 'weights', shape = [input_dim, output_dim],
+                            initializer = truncated_normal_initializer)
 
   layer_out = tf.matmul(layer_in, weights)
 
@@ -61,27 +61,27 @@ def batch_normalization(info, layer_in):
   output_dim = int(info_dict['<OutputDim>'])
   stddev = float(info_dict['<ParamStddev>'])
 
-  weights = tf.Variable(tf.truncated_normal([input_dim, output_dim],
+  weights = tf.get_variable(tf.truncated_normal([input_dim, output_dim],
                           stddev = stddev),
                         name = 'weights')
   
   z = tf.matmul(layer_in, weights)
   batch_mean, batch_var = tf.nn.moments(z, [0])
-  scale = tf.Variable(tf.ones([output_dim]), 'scale')
-  beta = tf.Variable(tf.zeros([output_dim]), 'beta')
+  scale = tf.get_variable(tf.ones([output_dim]), 'scale')
+  beta = tf.get_variable(tf.zeros([output_dim]), 'beta')
   layer_out = tf.nn.batch_normalization(z, batch_mean, batch_var, beta, scale, epsilon)
 
   return layer_out
 
 
-def lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob):
+def lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False):
   info_dict = info2dict(info)
   
   num_cell = int(info_dict['<NumCells>'])
 
-  cell = tf.contrib.rnn.core_rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
+  cell = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple=True, reuse = reuse)
 
-  cell = tf.contrib.rnn.core_rnn_cell.DropoutWrapper(cell = cell, input_keep_prob = keep_in_prob, 
+  cell = tf.contrib.rnn.DropoutWrapper(cell = cell, input_keep_prob = keep_in_prob, 
                                        output_keep_prob = keep_out_prob)
 
   layer_out,_ = tf.nn.dynamic_rnn(cell, 
@@ -93,17 +93,17 @@ def lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob):
   return layer_out
 
 
-def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob):
+def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False):
   info_dict = info2dict(info)
   
   num_cell = int(info_dict['<NumCells>'])
 
-  cell_fw = tf.contrib.rnn.core_rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
-  cell_bw = tf.contrib.rnn.core_rnn_cell.LSTMCell(num_cell, state_is_tuple=True)
+  cell_fw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple=True, reuse = reuse)
+  cell_bw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple=True, reuse = reuse)
 
-  cell_fw = tf.contrib.rnn.core_rnn_cell.DropoutWrapper(cell = cell_fw, input_keep_prob = keep_in_prob, 
+  cell_fw = tf.contrib.rnn.DropoutWrapper(cell = cell_fw, input_keep_prob = keep_in_prob, 
                                           output_keep_prob = keep_out_prob)
-  cell_bw = tf.contrib.rnn.core_rnn_cell.DropoutWrapper(cell = cell_bw, input_keep_prob = keep_in_prob, 
+  cell_bw = tf.contrib.rnn.DropoutWrapper(cell = cell_bw, input_keep_prob = keep_in_prob, 
                                           output_keep_prob = keep_out_prob)
 
   layer_out,_ = tf.nn.bidirectional_dynamic_rnn(cell_fw, 
