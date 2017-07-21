@@ -18,7 +18,7 @@ class NNTrainer(object):
   session is initialized either by read() or by init_nnet().
   '''
 
-  def __init__(self, arch, input_dim, output_dim, batch_size, num_gpus = 1, 
+  def __init__(self, arch, input_dim, output_dim, batch_size, use_gpu = True, 
                summary_dir = None, max_length = None, jitter_window = None):
     ''' just some basic config for this trainer '''
     self.arch = arch
@@ -28,7 +28,7 @@ class NNTrainer(object):
     self.max_length = max_length    # used for lstm
     self.jitter_window = jitter_window # used for jitter training
     self.sess = None
-    self.num_gpus = num_gpus
+    self.use_gpu = use_gpu
     self.summary_dir = summary_dir
 
 
@@ -105,15 +105,18 @@ class NNTrainer(object):
       saver.save(self.sess, filename)
 
 
-  def set_gpu(self):
-    if self.num_gpus != 0:
-      p1 = Popen (['pick-gpu', str(self.num_gpus)], stdout=PIPE)
-      gpu_ids = str(p1.stdout.read(), 'utf-8')
-      if gpu_ids == "-1":
-        raise RuntimeError("Picking gpu failed")
-      os.environ['CUDA_VISIBLE_DEVICES'] = gpu_ids
+  def set_gpu(self, gpu_id = None):
+    if self.use_gpu:
+      if gpu_id is None:
+        p1 = Popen ('pick-gpu', stdout=PIPE)
+        gpu_id = int(p1.stdout.read())
+      if gpu_id == -1:
+        raise RuntimeError("Unable to pick gpu")
+      os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
     else:
       os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
+    return gpu_id
 
 
   def get_num_subnnets(self):
@@ -178,61 +181,8 @@ class NNTrainer(object):
       self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
       self.summary_writer.flush()
 
-  
+
   def init_lstm(self, nnet_proto_file, seed = 777):
-    if self.num_gpus == 1:
-      self.init_lstm_single(nnet_proto_file, seed)
-    else:
-      self.init_lstm_multi(nnet_proto_file, seed)
-
-
-  def init_lstm_single(self, nnet_proto_file, seed = 777):
-    self.graph = tf.Graph()
-    with self.graph.as_default():
-      feats_holder, seq_length_holder, mask_holder, labels_holder = nnet.placeholder_lstm(self.input_dim, 
-                                                                             self.max_length,
-                                                                             self.batch_size)
-      
-      keep_in_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_in_prob')
-      keep_out_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_out_prob')
-
-      logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, 
-                                   keep_in_prob_holder, keep_out_prob_holder)
-
-      outputs = tf.nn.softmax(logits)
-      init_all_op = tf.global_variables_initializer()
-
-      tf.add_to_collection('logits', logits)
-      tf.add_to_collection('outputs', outputs)
-      tf.add_to_collection('feats_holder', feats_holder)
-      tf.add_to_collection('labels_holder', labels_holder)
-      tf.add_to_collection('seq_length_holder', seq_length_holder)
-      tf.add_to_collection('mask_holder', mask_holder)
-      tf.add_to_collection('keep_in_prob_holder', keep_in_prob_holder)
-      tf.add_to_collection('keep_out_prob_holder', keep_out_prob_holder)
-
-    
-    assert self.sess == None
-    self.set_gpu()
-    self.sess = tf.Session(graph=self.graph)
-    tf.set_random_seed(seed)
-    self.sess.run(init_all_op)
-
-    self.logits = logits
-    self.outputs = outputs
-    self.feats_holder = feats_holder
-    self.labels_holder = labels_holder
-    self.seq_length_holder = seq_length_holder
-    self.mask_holder = mask_holder
-    self.keep_in_prob_holder = keep_in_prob_holder
-    self.keep_out_prob_holder = keep_out_prob_holder
-
-    if self.summary_dir is not None:
-      self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
-      self.summary_writer.flush()
-
-
-  def init_lstm_multi(self, nnet_proto_file, seed):
     self.graph = tf.Graph()
     with self.graph.as_default():
       feats_holder, seq_length_holder, mask_holder, labels_holder = nnet.placeholder_lstm(self.input_dim, 
