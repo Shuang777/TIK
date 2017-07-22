@@ -368,6 +368,11 @@ class NNTrainer(object):
                                          self.max_length,
                                          self.batch_size*self.num_gpus)
       
+      tf.add_to_collection('feats_holder', feats_holder)
+      tf.add_to_collection('labels_holder', labels_holder)
+      tf.add_to_collection('seq_length_holder', seq_length_holder)
+      tf.add_to_collection('mask_holder', mask_holder)
+
       keep_in_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_in_prob')
       keep_out_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_out_prob')
       tf.add_to_collection('keep_in_prob_holder', keep_in_prob_holder)
@@ -398,13 +403,14 @@ class NNTrainer(object):
       # end towers/gpus
 
       init_all_op = tf.global_variables_initializer()
+      predict_logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, 
+                                           keep_in_prob_holder, keep_out_prob_holder, reuse = True)
+      predict_outputs = tf.nn.softmax(predict_logits)
+      tf.add_to_collection('predict_logits', predict_logits)
+      tf.add_to_collection('predict_outputs', predict_outputs)
 
     # end tf graphs
 
-    tf.add_to_collection('feats_holder', feats_holder)
-    tf.add_to_collection('labels_holder', labels_holder)
-    tf.add_to_collection('seq_length_holder', seq_length_holder)
-    tf.add_to_collection('mask_holder', mask_holder)
     self.feats_holder = feats_holder
     self.labels_holder = labels_holder
     self.seq_length_holder = seq_length_holder
