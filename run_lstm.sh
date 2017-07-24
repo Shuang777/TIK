@@ -9,20 +9,20 @@ stage=0
 single=true
 debug=false
 pdb=true
+gpu=1
+sleep=0
 
 . ./cmd.sh
 . ./path.sh
 . parse_options.sh
 
-## Configurable directories
-train=data/train_nodup
 #train=data/train_100k_nodup
 train=data/train_10ks
 train_ali=exp/tri4_ali_nodup
 
 lang=data/lang_sw1_tg
 gmm=exp/tri4
-exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_batch64_jitter_re
+exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.8_drop0.8_batch128c_jitter
 #exp=exp/tflstm_5a_10ks_1024x4_win20_lr0.4_jitter
 #exp=exp/tflstm_5a_256x4_lr0.04_drop0.8
 #exp=exp/tflstm_5a_256x4_lr0.01
@@ -31,7 +31,11 @@ exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_batch64_jitter_re
 #exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_batch64_jitter_more
 #exp=exp/tflstm_5a_10ks_1024x6_conx0_max60_win20_lr0.4_drop0.8_jitter_re_con
 
-config=config/swbd_lstm_jitter.cfg
+config=config/swbd_lstm.cfg
+
+if [ $gpu -gt 1 ]; then
+  exp=${exp}_gpu$gpu
+fi
 
 if $debug; then
   train=data/train_debug
@@ -41,6 +45,7 @@ if $debug; then
   exp=exp/tflstm_5a_debug
 fi
 
+sleep $sleep
 
 $debug && $pdb && debug_args='-m pdb'
 

@@ -27,6 +27,7 @@ class NNTrainer(object):
     self.batch_size = batch_size
     self.max_length = max_length    # used for lstm
     self.jitter_window = jitter_window # used for jitter training
+    self.graph = None
     self.sess = None
     self.num_gpus = num_gpus
     self.use_gpu = use_gpu
@@ -46,6 +47,7 @@ class NNTrainer(object):
 
   
   def read(self, filename):
+    filename = filename.strip()
     if self.arch == 'dnn':
       self.read_dnn(filename)
     elif self.arch == 'lstm':
@@ -61,11 +63,14 @@ class NNTrainer(object):
 
   def read_dnn_single(self, filename):
     ''' read graph from file '''
+    if self.graph is None:
+      self.graph = tf.Graph()
+
+    with self.graph.as_default():
+      self.saver = tf.train.import_meta_graph(filename+'.meta')
+
     if self.sess is None:
       # this is the first reading
-      self.graph = tf.Graph()
-      with self.graph.as_default():
-        self.saver = tf.train.import_meta_graph(filename+'.meta')
 
       self.logits = self.graph.get_collection('logits')[0]
       self.outputs = self.graph.get_collection('outputs')[0]
@@ -84,11 +89,14 @@ class NNTrainer(object):
 
   def read_dnn_multi(self, filename):
     ''' read graph from file '''
+    if self.graph is None:
+      self.graph = tf.Graph()
+    
+    with self.graph.as_default():
+      self.saver = tf.train.import_meta_graph(filename+'.meta')
+
     if self.sess is None:
       # this is the first reading
-      self.graph = tf.Graph()
-      with self.graph.as_default():
-        self.saver = tf.train.import_meta_graph(filename+'.meta')
 
       self.logits = []
       self.outputs = []
@@ -121,10 +129,13 @@ class NNTrainer(object):
 
   def read_lstm_single(self, filename):
     ''' read graph from file '''
-    if self.sess == None:
+    if self.graph is None:
       self.graph = tf.Graph()
-      with self.graph.as_default():
-        self.saver = tf.train.import_meta_graph(filename+'.meta')
+
+    with self.graph.as_default():
+      self.saver = tf.train.import_meta_graph(filename+'.meta')
+
+    if self.sess is None:
      
       self.logits = self.graph.get_collection('logits')[0]
       self.outputs = self.graph.get_collection('outputs')[0]
@@ -146,18 +157,23 @@ class NNTrainer(object):
     
   
   def read_lstm_multi(self, filename):
-    if self.sess == None:
+
+    if self.graph is None:
       self.graph = tf.Graph()
-      with self.graph.as_default():
-        self.saver = tf.train.import_meta_graph(filename+'.meta')
-     
+
+    with self.graph.as_default():
+      self.saver = tf.train.import_meta_graph(filename+'.meta')
+    
+    if self.sess is None: 
       self.logits = []
       self.outputs = []
-      for i in range(self.num_gpus):
-        tower_logits = self.graph.get_collection('logits')[i]
-        tower_outputs = self.graph.get_collection('outputs')[i]
-        self.logits.append(tower_logits)
-        self.outputs.append(tower_outputs)
+
+      if self.use_gpu:
+        for i in range(self.num_gpus):
+          tower_logits = self.graph.get_collection('logits')[i]
+          tower_outputs = self.graph.get_collection('outputs')[i]
+          self.logits.append(tower_logits)
+          self.outputs.append(tower_outputs)
 
       self.feats_holder = self.graph.get_collection('feats_holder')[0]
       self.labels_holder = self.graph.get_collection('labels_holder')[0]
@@ -170,7 +186,8 @@ class NNTrainer(object):
       self.predict_outputs = self.graph.get_collection('predict_outputs')[0]
 
       self.set_gpu()
-      self.sess = tf.Session(graph=self.graph)
+      self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(
+                             allow_soft_placement=True))
     
     with self.graph.as_default():
       self.saver.restore(self.sess, filename)
@@ -372,7 +389,7 @@ class NNTrainer(object):
       tf.add_to_collection('labels_holder', labels_holder)
       tf.add_to_collection('seq_length_holder', seq_length_holder)
       tf.add_to_collection('mask_holder', mask_holder)
-
+      
       keep_in_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_in_prob')
       keep_out_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_out_prob')
       tf.add_to_collection('keep_in_prob_holder', keep_in_prob_holder)
@@ -401,13 +418,13 @@ class NNTrainer(object):
             self.outputs.append(tower_outputs)
 
       # end towers/gpus
-
       init_all_op = tf.global_variables_initializer()
-      predict_logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, 
+      predict_logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file,
                                            keep_in_prob_holder, keep_out_prob_holder, reuse = True)
       predict_outputs = tf.nn.softmax(predict_logits)
       tf.add_to_collection('predict_logits', predict_logits)
       tf.add_to_collection('predict_outputs', predict_outputs)
+
 
     # end tf graphs
 

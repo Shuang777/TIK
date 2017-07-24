@@ -31,11 +31,12 @@ if __name__ != '__main__':
 logger.info(" ".join(sys.argv))
 
 arg_parser = argparse.ArgumentParser()
-arg_parser.add_argument('--use-gpu', type = str)
+arg_parser.add_argument('--use-gpu', dest = 'use_gpu', action = 'store_true')
 arg_parser.add_argument('--sleep', type = int)
 arg_parser.add_argument('config_file', type = str)
 arg_parser.add_argument('model_file', type = str)
 arg_parser.add_argument('prior_counts_file', type = str)
+arg_parser.set_defaults(use_gpu = False)
 args = arg_parser.parse_args()
 
 config = configparser.ConfigParser()
