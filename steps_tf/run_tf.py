@@ -7,6 +7,7 @@ import shutil
 import datetime
 import logging
 import fnmatch
+import atexit
 from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import NNTrainer
@@ -108,6 +109,9 @@ tr_gen = DataGenerator (data_gen_type, exp+'/tr90', ali_labels, ali_dir,
 cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir, 
                         exp, 'cv', feature_conf, num_gpus = num_gpus)
 
+atexit.register(tr_gen.clean())
+atexit.register(cv_gen.clean())
+
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
 output_dim = get_model_pdfs(gmm)
@@ -141,7 +145,7 @@ if os.path.isfile(exp+'/.mlp_best'):
   mlp_best = open(exp+'/.mlp_best').read()
   logger.info("loading model from %s", mlp_best)
   nnet.read(mlp_best)
-elif os.path.isfile(mlp_init+'.index') and 'init_file' not in nnet_conf:
+elif os.path.isfile(mlp_init+'.index'):
   logger.info("loading model from %s", mlp_init)
   nnet.read(mlp_init)
   mlp_best = mlp_init

@@ -19,7 +19,7 @@ def parse(config_tuple):
       config_parsed[i] = float(config_dict[i])
     elif i in ['batch_norm', 'with_softmax']:
       config_parsed[i] = str2boolean(config_dict[i])
-    elif i in ['init_file', 'nonlin', 'op_type', 'nnet_arch', 'lstm_type']:
+    elif i in ['nonlin', 'op_type', 'nnet_arch', 'lstm_type']:
       config_parsed[i] = config_dict[i]
     else:
       raise RuntimeError('section_config.parse: config field %s not supported' % i)

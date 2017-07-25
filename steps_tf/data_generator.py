@@ -84,9 +84,9 @@ class DataGenerator:
     return self.feat_dim
 
 
-  def __exit__ (self):
+  def clean (self):
     shutil.rmtree(self.temp_dir)
-  
+
 
   def has_data(self):
   # has enough data for next batch
