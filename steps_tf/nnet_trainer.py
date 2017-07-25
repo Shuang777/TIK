@@ -8,6 +8,8 @@ import nnet
 import math
 import logging
 from make_nnet_proto import make_nnet_proto, make_lstm_proto
+from dnn import DNN
+from lstm import LSTM
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -22,23 +24,31 @@ class NNTrainer(object):
                summary_dir = None, max_length = None, jitter_window = None):
     ''' just some basic config for this trainer '''
     self.arch = arch
-    self.input_dim = input_dim
-    self.output_dim = output_dim
-    self.batch_size = batch_size
-    self.max_length = max_length    # used for lstm
-    self.jitter_window = jitter_window # used for jitter training
     self.graph = None
     self.sess = None
+    self.batch_size = batch_size
+    self.jitter_window = jitter_window
     self.num_gpus = num_gpus
     self.use_gpu = use_gpu
     self.summary_dir = summary_dir
 
+    if self.arch == 'dnn':
+      self.model = DNN(input_dim, output_dim, batch_size, num_gpus)
+    elif self.arch == 'lstm':
+      self.model = LSTM(input_dim, output_dim, batch_size, max_length, num_gpus)
+    else:
+      raise RuntimeError("arch type %s not supported", self.arch)
+    
 
   def make_proto(self, nnet_conf, nnet_proto_file):
     if self.arch == 'dnn':
-      make_nnet_proto(self.input_dim, self.output_dim, nnet_conf, nnet_proto_file)
+      make_nnet_proto(self.model.get_input_dim(), self.model.get_output_dim(), 
+                      nnet_conf, nnet_proto_file)
     elif self.arch == 'lstm':
-      make_lstm_proto(self.input_dim, self.output_dim, nnet_conf, nnet_proto_file)
+      make_lstm_proto(self.model.get_input_dim(), self.model.get_output_dim(), 
+                      nnet_conf, nnet_proto_file)
+    else:
+      raise RuntimeError("arch type %s not supported", self.arch)
 
 
   def __exit__ (self):
@@ -48,150 +58,23 @@ class NNTrainer(object):
   
   def read(self, filename):
     filename = filename.strip()
-    if self.arch == 'dnn':
-      self.read_dnn(filename)
-    elif self.arch == 'lstm':
-      self.read_lstm(filename)
 
-
-  def read_dnn(self, filename):
-    if self.num_gpus == 1:
-      self.read_dnn_single(filename)
-    else:
-      self.read_dnn_multi(filename)
-
-
-  def read_dnn_single(self, filename):
-    ''' read graph from file '''
     if self.graph is None:
       self.graph = tf.Graph()
 
     with self.graph.as_default():
       self.saver = tf.train.import_meta_graph(filename+'.meta')
+
+    self.model.read_from_file(self.graph, self.use_gpu)
 
     if self.sess is None:
-      # this is the first reading
-
-      self.logits = self.graph.get_collection('logits')[0]
-      self.outputs = self.graph.get_collection('outputs')[0]
-      self.feats_holder = self.graph.get_collection('feats_holder')[0]
-      self.labels_holder = self.graph.get_collection('labels_holder')[0]
-
-      self.predict_logits = self.logits     # to keep compatible with multi GPU training code
-      self.predict_outputs = self.outputs
-      
+      # this is the first reading a graph
       self.set_gpu()
-      self.sess = tf.Session(graph=self.graph)
-
-    with self.graph.as_default():
-      self.saver.restore(self.sess, filename)
-      
-
-  def read_dnn_multi(self, filename):
-    ''' read graph from file '''
-    if self.graph is None:
-      self.graph = tf.Graph()
-    
-    with self.graph.as_default():
-      self.saver = tf.train.import_meta_graph(filename+'.meta')
-
-    if self.sess is None:
-      # this is the first reading
-
-      self.logits = []
-      self.outputs = []
-      for i in range(self.num_gpus):
-        tower_logits = self.graph.get_collection('logits')[i]
-        tower_outputs = self.graph.get_collection('outputs')[i]
-        self.logits.append(tower_logits)
-        self.outputs.append(tower_outputs)
-
-      self.feats_holder = self.graph.get_collection('feats_holder')[0]
-      self.labels_holder = self.graph.get_collection('labels_holder')[0]
-
-      self.predict_logits = self.graph.get_collection('predict_logits')[0]
-      self.predict_outputs = self.graph.get_collection('predict_outputs')[0]
-      
-      self.set_gpu()
-      self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(
-            allow_soft_placement=True) )
+      self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(allow_soft_placement=True))
 
     with self.graph.as_default():
       self.saver.restore(self.sess, filename)
 
-
-  def read_lstm(self, filename):
-    if self.num_gpus == 1:
-      self.read_lstm_single(filename)
-    else:
-      self.read_lstm_multi(filename)
-
-
-  def read_lstm_single(self, filename):
-    ''' read graph from file '''
-    if self.graph is None:
-      self.graph = tf.Graph()
-
-    with self.graph.as_default():
-      self.saver = tf.train.import_meta_graph(filename+'.meta')
-
-    if self.sess is None:
-     
-      self.logits = self.graph.get_collection('logits')[0]
-      self.outputs = self.graph.get_collection('outputs')[0]
-      self.feats_holder = self.graph.get_collection('feats_holder')[0]
-      self.labels_holder = self.graph.get_collection('labels_holder')[0]
-      self.seq_length_holder = self.graph.get_collection('seq_length_holder')[0]
-      self.mask_holder = self.graph.get_collection('mask_holder')[0]
-      self.keep_in_prob_holder = self.graph.get_collection('keep_in_prob_holder')[0]
-      self.keep_out_prob_holder = self.graph.get_collection('keep_out_prob_holder')[0]
-
-      self.predict_logits = self.logits     # to keep compatible with multi GPU training code
-      self.predict_outputs = self.outputs
-
-      self.set_gpu()
-      self.sess = tf.Session(graph=self.graph)
-      
-    with self.graph.as_default():
-      self.saver.restore(self.sess, filename)
-    
-  
-  def read_lstm_multi(self, filename):
-
-    if self.graph is None:
-      self.graph = tf.Graph()
-
-    with self.graph.as_default():
-      self.saver = tf.train.import_meta_graph(filename+'.meta')
-    
-    if self.sess is None: 
-      self.logits = []
-      self.outputs = []
-
-      if self.use_gpu:
-        for i in range(self.num_gpus):
-          tower_logits = self.graph.get_collection('logits')[i]
-          tower_outputs = self.graph.get_collection('outputs')[i]
-          self.logits.append(tower_logits)
-          self.outputs.append(tower_outputs)
-
-      self.feats_holder = self.graph.get_collection('feats_holder')[0]
-      self.labels_holder = self.graph.get_collection('labels_holder')[0]
-      self.seq_length_holder = self.graph.get_collection('seq_length_holder')[0]
-      self.mask_holder = self.graph.get_collection('mask_holder')[0]
-      self.keep_in_prob_holder = self.graph.get_collection('keep_in_prob_holder')[0]
-      self.keep_out_prob_holder = self.graph.get_collection('keep_out_prob_holder')[0]
-
-      self.predict_logits = self.graph.get_collection('predict_logits')[0]
-      self.predict_outputs = self.graph.get_collection('predict_outputs')[0]
-
-      self.set_gpu()
-      self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(
-                             allow_soft_placement=True))
-    
-    with self.graph.as_default():
-      self.saver.restore(self.sess, filename)
-  
 
   def write(self, filename):
     with self.graph.as_default():
@@ -211,50 +94,15 @@ class NNTrainer(object):
       os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 
-  def get_num_subnnets(self):
-    return len(self.feats_holder)
-
-
-  def init_nnet(self, nnet_proto_file):
-    if self.arch == 'dnn':
-      self.init_dnn(nnet_proto_file)
-    elif self.arch == 'lstm':
-      self.init_lstm(nnet_proto_file)
-
-
-  def init_dnn(self, nnet_proto_file, seed = 777):
-    if self.num_gpus == 1:
-      self.init_dnn_single(nnet_proto_file, seed)
-    else:
-      self.init_dnn_multi(nnet_proto_file, seed)
-
-
-  def init_dnn_single(self, nnet_proto_file, seed=777):
-    ''' initializing nnet from file or config (graph creation) '''
+  def init_nnet(self, nnet_proto_file, seed = 777):
     self.graph = tf.Graph()
-
-    with self.graph.as_default():
-      tf.set_random_seed(seed)
-      feats_holder, labels_holder = nnet.placeholder_dnn(self.input_dim, self.batch_size)
-      
-      logits = nnet.inference_dnn(feats_holder, nnet_proto_file)
-      outputs = tf.nn.softmax(logits)
-      init_all_op = tf.global_variables_initializer()
-
-      tf.add_to_collection('logits', logits)
-      tf.add_to_collection('outputs', outputs)
-      tf.add_to_collection('feats_holder', feats_holder)
-      tf.add_to_collection('labels_holder', labels_holder)
-    
-    assert self.sess == None
     self.set_gpu()
-    self.sess = tf.Session(graph=self.graph)
-    self.sess.run(init_all_op)
 
-    self.logits = logits
-    self.outputs = outputs
-    self.feats_holder = feats_holder
-    self.labels_holder = labels_holder
+    self.model.init(self.graph, nnet_proto_file, seed)
+
+    assert self.sess == None
+    self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(allow_soft_placement=True))
+    self.sess.run(self.model.get_init_all_op())
 
     if self.summary_dir is not None:
       self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
@@ -262,351 +110,34 @@ class NNTrainer(object):
 
     return
 
-  def init_dnn_multi(self, nnet_proto_file, seed=777):
-    ''' initializing nnet from file or config (graph creation) '''
-    self.graph = tf.Graph()
-    self.set_gpu()
-    self.logits = []
-    self.outputs = []
-
-    with self.graph.as_default(), tf.device('/cpu:0'):
-      tf.set_random_seed(seed)
-
-      feats_holder, labels_holder = nnet.placeholder_dnn(
-                                      self.input_dim, 
-                                      self.batch_size*self.num_gpus)
-      
-      tf.add_to_collection('feats_holder', feats_holder)
-      tf.add_to_collection('labels_holder', labels_holder)
-      self.feats_holder = feats_holder
-      self.labels_holder = labels_holder
-
-      for i in range(self.num_gpus):
-        with tf.device('/gpu:%d' % i):
-          with tf.name_scope('Tower_%d' % i) as scope:
-            
-            tower_start_index = i * self.batch_size
-            tower_end_index = (i+1) * self.batch_size
-
-            tower_feats_holder = feats_holder[tower_start_index:tower_end_index,:]
-            tower_logits = nnet.inference_dnn(tower_feats_holder, nnet_proto_file, reuse = (i != 0))
-            tower_outputs = tf.nn.softmax(tower_logits)
-
-            self.logits.append(tower_logits)
-            self.outputs.append(tower_outputs)
-
-            tf.add_to_collection('logits', tower_logits)
-            tf.add_to_collection('outputs', tower_outputs)
-
-      # end towers/gpus
-      init_all_op = tf.global_variables_initializer()
-      predict_logits = nnet.inference_dnn(feats_holder, nnet_proto_file, reuse = True)
-      predict_outputs = tf.nn.softmax(predict_logits)
-      tf.add_to_collection('predict_logits', predict_logits)
-      tf.add_to_collection('predict_outputs', predict_outputs)
-
-    # end tf graph
-
-    assert self.sess == None
-    self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(
-                           allow_soft_placement=True))
-    self.sess.run(init_all_op)
-
-    if self.summary_dir is not None:
-      self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
-      self.summary_writer.flush()
-
-    return
- 
-  def init_lstm(self, nnet_proto_file, seed = 777):
-    if self.num_gpus == 1:
-      self.init_lstm_single(nnet_proto_file, seed)
-    else:
-      self.init_lstm_multi(nnet_proto_file, seed)
-
-
-  def init_lstm_single(self, nnet_proto_file, seed):
-    self.graph = tf.Graph()
-    with self.graph.as_default():
-      feats_holder, seq_length_holder, mask_holder, labels_holder = nnet.placeholder_lstm(self.input_dim, 
-                                                                             self.max_length,
-                                                                             self.batch_size)
-      
-      keep_in_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_in_prob')
-      keep_out_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_out_prob')
-
-      logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, 
-                                   keep_in_prob_holder, keep_out_prob_holder)
-
-      outputs = tf.nn.softmax(logits)
-      init_all_op = tf.global_variables_initializer()
-
-      tf.add_to_collection('logits', logits)
-      tf.add_to_collection('outputs', outputs)
-      tf.add_to_collection('feats_holder', feats_holder)
-      tf.add_to_collection('labels_holder', labels_holder)
-      tf.add_to_collection('seq_length_holder', seq_length_holder)
-      tf.add_to_collection('mask_holder', mask_holder)
-      tf.add_to_collection('keep_in_prob_holder', keep_in_prob_holder)
-      tf.add_to_collection('keep_out_prob_holder', keep_out_prob_holder)
-
-    
-    assert self.sess == None
-    self.set_gpu()
-    self.sess = tf.Session(graph=self.graph)
-    tf.set_random_seed(seed)
-    self.sess.run(init_all_op)
-
-    self.logits = logits
-    self.outputs = outputs
-    self.feats_holder = feats_holder
-    self.labels_holder = labels_holder
-    self.seq_length_holder = seq_length_holder
-    self.mask_holder = mask_holder
-    self.keep_in_prob_holder = keep_in_prob_holder
-    self.keep_out_prob_holder = keep_out_prob_holder
-
-    if self.summary_dir is not None:
-      self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
-      self.summary_writer.flush()
-
-
-  def init_lstm_multi(self, nnet_proto_file, seed):
-    self.graph = tf.Graph()
-    self.set_gpu()
-    self.logits = []
-    self.outputs = []
-   
-    with self.graph.as_default(), tf.device('/cpu:0'):
-
-      feats_holder, seq_length_holder, \
-        mask_holder, labels_holder = nnet.placeholder_lstm(
-                                         self.input_dim,
-                                         self.max_length,
-                                         self.batch_size*self.num_gpus)
-      
-      tf.add_to_collection('feats_holder', feats_holder)
-      tf.add_to_collection('labels_holder', labels_holder)
-      tf.add_to_collection('seq_length_holder', seq_length_holder)
-      tf.add_to_collection('mask_holder', mask_holder)
-      
-      keep_in_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_in_prob')
-      keep_out_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_out_prob')
-      tf.add_to_collection('keep_in_prob_holder', keep_in_prob_holder)
-      tf.add_to_collection('keep_out_prob_holder', keep_out_prob_holder)
-      self.keep_in_prob_holder = keep_in_prob_holder
-      self.keep_out_prob_holder = keep_out_prob_holder
-
-      for i in range(self.num_gpus):
-        with tf.device('/gpu:%d' % i):
-          with tf.name_scope('Tower_%d' % i) as scope:
-            
-            tower_start_index = i * self.batch_size
-            tower_end_index = (i+1) * self.batch_size
-
-            tower_feats_holder = feats_holder[tower_start_index:tower_end_index,:,:]
-            tower_seq_length_holder = seq_length_holder[tower_start_index:tower_end_index]
-
-            tower_logits = nnet.inference_lstm(tower_feats_holder, tower_seq_length_holder, nnet_proto_file, 
-                                         keep_in_prob_holder, keep_out_prob_holder, reuse = (i != 0))
-
-            tower_outputs = tf.nn.softmax(tower_logits)
-
-            tf.add_to_collection('logits', tower_logits)
-            tf.add_to_collection('outputs', tower_outputs)
-            self.logits.append(tower_logits)
-            self.outputs.append(tower_outputs)
-
-      # end towers/gpus
-      init_all_op = tf.global_variables_initializer()
-      predict_logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file,
-                                           keep_in_prob_holder, keep_out_prob_holder, reuse = True)
-      predict_outputs = tf.nn.softmax(predict_logits)
-      tf.add_to_collection('predict_logits', predict_logits)
-      tf.add_to_collection('predict_outputs', predict_outputs)
-
-
-    # end tf graphs
-
-    self.feats_holder = feats_holder
-    self.labels_holder = labels_holder
-    self.seq_length_holder = seq_length_holder
-    self.mask_holder = mask_holder
-
-    assert self.sess == None
-    self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(
-                           allow_soft_placement=True))
-    tf.set_random_seed(seed)
-    self.sess.run(init_all_op)
-
-    if self.summary_dir is not None:
-      self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
-      self.summary_writer.flush()
-
-
+     
   def init_training(self, optimizer_conf):
-    if self.arch == 'dnn':
-      self.init_training_dnn(optimizer_conf)
-    elif self.arch == 'lstm':
-      self.init_training_lstm(optimizer_conf)
-
-
-  def init_training_dnn(self, optimizer_conf, seed = 777):
-    if self.num_gpus == 1:
-      self.init_training_dnn_single(optimizer_conf)
-    else:
-      self.init_training_dnn_multi(optimizer_conf)
-
-
-  def init_training_dnn_single(self, optimizer_conf):
-    ''' initialze training graph; 
-    assumes self.logits, self.labels_holder in place'''
-    with self.graph.as_default():
-
-      loss = nnet.loss_dnn(self.logits, self.labels_holder)
-      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
-      train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
-      eval_acc = nnet.evaluation_dnn(self.logits, self.labels_holder)
-      
-    self.loss = loss
-    self.learning_rate_holder = learning_rate_holder
-    self.train_op = train_op
-    self.eval_acc = eval_acc
-
-
-  def init_training_dnn_multi(self, optimizer_conf):
-    tower_losses = []
-    tower_grads = []
-    tower_accs = []
-
-    with self.graph.as_default(), tf.device('/cpu:0'):
-      
-      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
-      assert optimizer_conf['op_type'].lower() == 'sgd'
-      opt = tf.train.GradientDescentOptimizer(learning_rate_holder)
-
-      for i in range(self.num_gpus):
-        with tf.device('/gpu:%d' % i):
-          with tf.name_scope('Tower_%d' % (i)) as scope:
-            
-            tower_start_index = i*self.batch_size
-            tower_end_index = (i+1)*self.batch_size
-
-            tower_labels_holder = self.labels_holder[tower_start_index:tower_end_index]
-
-            loss = nnet.loss_dnn(self.logits[i], tower_labels_holder)
-            tower_losses.append(loss)
-            grads = opt.compute_gradients(loss)
-            tower_grads.append(grads)
-            eval_acc = nnet.evaluation_dnn(self.logits[i], tower_labels_holder)
-            tower_accs.append(eval_acc)
-
-      grads = nnet.average_gradients(tower_grads)
-      train_op = opt.apply_gradients(grads)
-      losses = tf.reduce_sum(tower_losses)
-      accs = tf.reduce_sum(tower_accs)
-
-    self.loss = losses
-    self.eval_acc = accs
-    self.learning_rate_holder = learning_rate_holder
-    self.train_op = train_op
-
-
-  def init_training_lstm(self, optimizer_conf):
-    if self.num_gpus == 1:
-      self.init_training_lstm_single(optimizer_conf)
-    else:
-      self.init_training_lstm_multi(optimizer_conf)
-
-
-  def init_training_lstm_single(self, optimizer_conf):
-    ''' initialze training graph; 
-    assumes self.logits, self.labels_holder in place'''
-    with self.graph.as_default():
-
-      loss = nnet.loss_lstm(self.logits, self.labels_holder, self.mask_holder)
-      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
-      train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
-      eval_acc = nnet.evaluation_lstm(self.logits, self.labels_holder, self.mask_holder)
-
-    self.loss = loss
-    self.learning_rate_holder = learning_rate_holder
-    self.train_op = train_op
-    self.eval_acc = eval_acc
-
- 
-  def init_training_lstm_multi(self, optimizer_conf):
-    ''' initialze training graph; 
-    assumes self.logits, self.labels_holder in place'''
-    
-    tower_losses = []
-    tower_grads = []
-    tower_accs = []
-
-    with self.graph.as_default(), tf.device('/cpu:0'):
-      
-      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
-      assert optimizer_conf['op_type'].lower() == 'sgd'
-      opt = tf.train.GradientDescentOptimizer(learning_rate_holder)
-
-      for i in range(self.num_gpus):
-        with tf.device('/gpu:%d' % i):
-          with tf.name_scope('Tower_%d' % (i)) as scope:
-            
-            tower_start_index = i*self.batch_size
-            tower_end_index = (i+1)*self.batch_size
-
-            tower_mask_holder = self.mask_holder[tower_start_index:tower_end_index,:]
-            tower_labels_holder = self.labels_holder[tower_start_index:tower_end_index,:]
-
-            loss = nnet.loss_lstm(self.logits[i], tower_labels_holder, tower_mask_holder)
-            tower_losses.append(loss)
-            grads = opt.compute_gradients(loss)
-            tower_grads.append(grads)
-            eval_acc = nnet.evaluation_lstm(self.logits[i], tower_labels_holder, tower_mask_holder)
-            tower_accs.append(eval_acc)
-
-      grads = nnet.average_gradients(tower_grads)
-      train_op = opt.apply_gradients(grads)
-      losses = tf.reduce_sum(tower_losses)
-      accs = tf.reduce_sum(tower_accs)
-
-    self.loss = losses
-    self.eval_acc = accs
-    self.learning_rate_holder = learning_rate_holder
-    self.train_op = train_op
+    assert self.graph is not None
+    self.model.init_training(self.graph, optimizer_conf)
 
  
   def prepare_feed(self, train_gen, learning_rate, keep_in_prob, keep_out_prob):
     if self.arch == 'dnn':
       feed_dict, has_data = self.prepare_feed_dnn(train_gen, learning_rate)
     elif self.arch == 'lstm':
-      feed_dict, has_data = self.prepare_feed_lstm(train_gen, learning_rate, keep_in_prob, keep_out_prob)
-      feed_dict.update( {
-                  self.keep_in_prob_holder: keep_in_prob,
-                  self.keep_out_prob_holder: keep_out_prob } )
-
-    feed_dict.update( { self.learning_rate_holder: learning_rate })
-
+      feed_dict, has_data = self.prepare_feed_lstm(train_gen, learning_rate,
+                                                   keep_in_prob, keep_out_prob)
     return feed_dict, has_data
 
 
   def prepare_feed_dnn(self, train_gen, learning_rate):
-
     x, y = train_gen.get_batch_frames()
+    feed_dict = self.model.prep_feed(x, y, learning_rate)
 
-    feed_dict = { self.feats_holder : x,
-                  self.labels_holder : y }
     return feed_dict, x is not None
 
 
   def prepare_feed_lstm(self, train_gen, learning_rate, keep_in_prob, keep_out_prob):
     x, y, seq_length, mask = train_gen.get_batch_utterances()
 
-    feed_dict = { self.feats_holder : x,
-                  self.labels_holder : y,
-                  self.seq_length_holder: seq_length,
-                  self.mask_holder: mask }
+    feed_dict = self.model.prep_feed(x, y, seq_length, mask, 
+                                     learning_rate, keep_in_prob, keep_out_prob)
+
     return feed_dict, x is not None
     
 
@@ -636,9 +167,9 @@ class NNTrainer(object):
         break
 
       if learning_rate is None:
-        loss = self.sess.run(self.loss, feed_dict = feed_dict)
+        loss = self.sess.run(self.model.get_loss(), feed_dict = feed_dict)
       else:
-        _, loss = self.sess.run([self.train_op, self.loss], feed_dict = feed_dict)
+        _, loss = self.sess.run([self.model.get_train_op(), self.model.get_loss()], feed_dict = feed_dict)
 
       batch_frames = train_gen.get_last_batch_frames()
       sum_avg_loss += loss
@@ -647,7 +178,7 @@ class NNTrainer(object):
       count_steps += 1
 
       if keep_acc or count_steps % 1000 == 0 or count_steps == 1:
-        acc = self.sess.run(self.eval_acc, feed_dict = feed_dict)
+        acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
         sum_accs += acc
         sum_acc_frames += train_gen.get_last_batch_frames()
 
@@ -678,15 +209,6 @@ class NNTrainer(object):
     return avg_loss, avg_acc_str
 
 
-  def predict(self, feats, take_log = True):
-    if self.arch == 'dnn':
-      posts = self.predict_dnn(feats, take_log)
-    elif self.arch == 'lstm':
-      posts = self.predict_lstm(feats, take_log)
-
-    return posts
-
-
   def patch_to_batches(self, feats):
     ''' patch data so that it matches our batch_size'''
     if len(feats) % self.batch_size == 0:
@@ -695,38 +217,8 @@ class NNTrainer(object):
     feat_dim = len(feats[0])
     feats_padded = np.vstack([feats, np.zeros([row2pad, feat_dim])])
     return feats_padded
-      
-
-  def predict_dnn(self, feats, take_log = True):
-    '''
-    args: 
-      feats: np 2-d array of size[num_frames, feat_dim]
-    output:
-      posts: np 2-d array of size[num_frames, num_targets]
-    '''
-    posts = []
-    for i in range(math.ceil(len(feats) / self.batch_size)):
-      batch_start = i*self.batch_size
-      batch_end = (i+1)*self.batch_size
-      # we avoid copying feats, only patch the last batch
-      if len(feats) < batch_end:
-        feats_padded = self.patch_to_batches(feats[batch_start:,])
-      else:
-        feats_padded = feats[batch_start:batch_end, :]
-      
-      feed_dict = {self.feats_holder: feats_padded}
-
-      if take_log:
-        batch_posts = self.sess.run(self.predict_outputs, feed_dict=feed_dict)
-      else:
-        batch_posts = self.sess.run(self.predict_logits, feed_dict=feed_dict)
-      posts.append(batch_posts)
-
-    posts = np.vstack(posts)
-
-    return posts[0:len(feats),:]
-
-  
+ 
+ 
   def pack_utterance(self, feats):
     '''
     args:
@@ -774,10 +266,49 @@ class NNTrainer(object):
     return feats_packed, seq_length, post_pick
 
 
+  def predict(self, feats, take_log = True):
+    if self.arch == 'dnn':
+      posts = self.predict_dnn(feats, take_log)
+    elif self.arch == 'lstm':
+      posts = self.predict_lstm(feats, take_log)
+    else:
+      raise RuntimeError("arch type %s not supported", self.arch)
+    return posts
+
+
+  def predict_dnn(self, feats, take_log = True):
+    '''
+    args: 
+      feats: np 2-d array of size[num_frames, feat_dim]
+    output:
+      posts: np 2-d array of size[num_frames, num_targets]
+    '''
+    posts = []
+    for i in range(math.ceil(len(feats) / self.batch_size)):
+      batch_start = i*self.batch_size
+      batch_end = (i+1)*self.batch_size
+      # we avoid copying feats, only patch the last batch
+      if len(feats) < batch_end:
+        feats_padded = self.patch_to_batches(feats[batch_start:,])
+      else:
+        feats_padded = feats[batch_start:batch_end, :]
+      
+      feed_dict = self.model.prep_forward_feed(feats_padded)
+
+      if take_log:
+        batch_posts = self.sess.run(self.model.get_outputs(), feed_dict=feed_dict)
+      else:
+        batch_posts = self.sess.run(self.model.get_logits(), feed_dict=feed_dict)
+      posts.append(batch_posts)
+
+    posts = np.vstack(posts)
+
+    return posts[0:len(feats),:]
+
+
   def predict_lstm(self, feats, take_log = True):
     '''
     we need a sliding window to generate frame posteriors
-
     args: 
       feats: np 2-d array of size[num_frames, feat_dim]
     output:
@@ -794,15 +325,12 @@ class NNTrainer(object):
       feats_batch = feats_packed[batch_start:batch_end, :]
       seq_length_batch = seq_length[batch_start:batch_end]
 
-      feed_dict = {self.feats_holder: feats_batch,
-                   self.seq_length_holder: seq_length_batch,
-                   self.keep_in_prob_holder: 1.0,
-                   self.keep_out_prob_holder: 1.0}
+      feed_dict = self.model.prep_forward_feed(feats_batch, seq_length_batch, 1.0, 1.0)
 
       if take_log:
-        batch_posts = self.sess.run(self.predict_outputs, feed_dict=feed_dict)
+        batch_posts = self.sess.run(self.model.get_outputs(), feed_dict=feed_dict)
       else:
-        batch_posts = self.sess.run(self.predict_logits, feed_dict=feed_dict)
+        batch_posts = self.sess.run(self.model.get_logits(), feed_dict=feed_dict)
       # batch_posts of size [batch_size, max_len, num_targets]
 
       for piece in range(self.batch_size):
