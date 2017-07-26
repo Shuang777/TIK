@@ -33,9 +33,9 @@ logger.info(" ".join(sys.argv))
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--use-gpu', dest = 'use_gpu', action = 'store_true')
 arg_parser.add_argument('--sleep', type = int)
+arg_parser.add_argument('--prior-counts', type = str, default = None)
 arg_parser.add_argument('config_file', type = str)
 arg_parser.add_argument('model_file', type = str)
-arg_parser.add_argument('prior_counts_file', type = str)
 arg_parser.set_defaults(use_gpu = False)
 args = arg_parser.parse_args()
 
@@ -69,9 +69,10 @@ logger.info("loading the model %s", args.model_file)
 model_name=open(args.model_file, 'r').read()
 nnet.read(model_name)
 
-prior_counts = np.genfromtxt (args.prior_counts_file)
-priors = prior_counts / prior_counts.sum()
-log_priors = np.log(priors)
+if args.prior_counts is not None:
+  prior_counts = np.genfromtxt (args.prior_counts)
+  priors = prior_counts / prior_counts.sum()
+  log_priors = np.log(priors)
 
 ark_in = sys.stdin.buffer
 #ark_in = open('stdin','r')
@@ -79,8 +80,10 @@ ark_out = sys.stdout.buffer
 encoding = sys.stdout.encoding
 signal (SIGPIPE, SIG_DFL)
 
+# here we are doing context window and feature normalization
 p1 = Popen(['splice-feats', '--print-args=false', '--left-context='+str(splice), 
-            '--right-context='+str(splice), 'ark:-', 'ark:-'], stdin=ark_in, stdout=PIPE, stderr=DEVNULL)
+            '--right-context='+str(splice), 'ark:-', 'ark:-'], 
+            stdin=ark_in, stdout=PIPE, stderr=DEVNULL)
 p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', srcdir+'/cmvn.mat', 
              'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
@@ -91,7 +94,13 @@ while True:
     break
 
   log_post = nnet.predict (feats, take_log = False)
-  log_likes = log_post - log_priors
-  kaldi_IO.write_utterance(uid, log_likes, ark_out, encoding)
+  nnet_out = log_post
+  if args.prior_counts is not None:
+    log_likes = log_post - log_priors
+    nnet_out = log_likes
 
-p1.stdout.close
+  kaldi_IO.write_utterance(uid, nnet_out, ark_out, encoding)
+
+p1.stdout.close()
+
+

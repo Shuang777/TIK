@@ -98,8 +98,10 @@ ali_labels = get_alignments(exp, ali_dir)
 # prepare training data generator
 if nnet_conf['nnet_arch'] == 'lstm':
   data_gen_type = 'utterance'
-elif nnet_conf['nnet_arch'] == 'dnn':
+elif nnet_conf['nnet_arch'] in ['dnn', 'bn']:
   data_gen_type = 'frame'
+else:
+  raise RuntimeError("nnet_arch %s not supported yet", nnet_conf['nnet_arch'])
 
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
@@ -109,8 +111,8 @@ tr_gen = DataGenerator (data_gen_type, exp+'/tr90', ali_labels, ali_dir,
 cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir, 
                         exp, 'cv', feature_conf, num_gpus = num_gpus)
 
-atexit.register(tr_gen.clean())
-atexit.register(cv_gen.clean())
+atexit.register(tr_gen.clean)
+atexit.register(cv_gen.clean)
 
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()

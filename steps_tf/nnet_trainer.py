@@ -9,6 +9,7 @@ import math
 import logging
 from make_nnet_proto import make_nnet_proto, make_lstm_proto
 from dnn import DNN
+from bn import BN
 from lstm import LSTM
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,8 @@ class NNTrainer(object):
 
     if self.arch == 'dnn':
       self.model = DNN(input_dim, output_dim, batch_size, num_gpus)
+    elif self.arch == 'bn':
+      self.model = BN(input_dim, output_dim, batch_size, num_gpus)
     elif self.arch == 'lstm':
       self.model = LSTM(input_dim, output_dim, batch_size, max_length, num_gpus)
     else:
@@ -42,7 +45,7 @@ class NNTrainer(object):
     
 
   def make_proto(self, nnet_conf, nnet_proto_file):
-    if self.arch == 'dnn':
+    if self.arch in ['dnn', 'bn']:    # currently we use the same function for dnn and bn
       make_nnet_proto(self.model.get_input_dim(), self.model.get_output_dim(), 
                       nnet_conf, nnet_proto_file)
     elif self.arch == 'lstm':
@@ -118,7 +121,7 @@ class NNTrainer(object):
 
  
   def prepare_feed(self, train_gen, learning_rate, keep_in_prob, keep_out_prob):
-    if self.arch == 'dnn':
+    if self.arch in ['dnn', 'bn']:
       feed_dict, has_data = self.prepare_feed_dnn(train_gen, learning_rate)
     elif self.arch == 'lstm':
       feed_dict, has_data = self.prepare_feed_lstm(train_gen, learning_rate,
@@ -270,6 +273,8 @@ class NNTrainer(object):
   def predict(self, feats, take_log = True):
     if self.arch == 'dnn':
       posts = self.predict_dnn(feats, take_log)
+    elif self.arch == 'bn':
+      posts = self.gen_bn_feats(feats, take_log)
     elif self.arch == 'lstm':
       posts = self.predict_lstm(feats, take_log)
     else:
@@ -305,6 +310,33 @@ class NNTrainer(object):
     posts = np.vstack(posts)
 
     return posts[0:len(feats),:]
+
+
+  def gen_bn_feats(self, feats, take_log = True):
+    '''
+    args: 
+      feats: np 2-d array of size[num_frames, feat_dim]
+    output:
+      posts: np 2-d array of size[num_frames, num_targets]
+    '''
+    bn_outs = []
+    for i in range(math.ceil(len(feats) / self.batch_size)):
+      batch_start = i*self.batch_size
+      batch_end = (i+1)*self.batch_size
+      # we avoid copying feats, only patch the last batch
+      if len(feats) < batch_end:
+        feats_padded = self.patch_to_batches(feats[batch_start:,])
+      else:
+        feats_padded = feats[batch_start:batch_end, :]
+      
+      feed_dict = self.model.prep_forward_feed(feats_padded)
+
+      batch_bn_outs = self.sess.run(self.model.get_bn(), feed_dict=feed_dict)
+      bn_outs.append(batch_bn_outs)
+
+    bn_outs = np.vstack(bn_outs)
+
+    return bn_outs[0:len(feats),:]
 
 
   def predict_lstm(self, feats, take_log = True):

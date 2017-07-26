@@ -56,6 +56,40 @@ def inference_dnn(feats_holder, nnet_proto_file, reuse = False):
   return logits
 
 
+def inference_bn(feats_holder, nnet_proto_file, reuse = False):
+  '''
+  args:
+    feats_holder: np 2-d array of size [num_batch, feat_dim]
+  outputs: 
+    logits: np 2-d array of size [num_batch, num_targets]
+  '''
+  
+  nnet_proto = open(nnet_proto_file, 'r')
+  line = nnet_proto.readline().strip()
+  assert line == '<NnetProto>'
+  layer_in = feats_holder
+  count_layer = 1
+  is_bn_layer = False
+  for line in nnet_proto:
+    line = line.strip()
+    if line == '</NnetProto>':
+      break
+    elif line == '<BottleNeck>':
+      is_bn_layer = True
+      continue
+    elif line == '</BottleNeck>':
+      is_bn_layer = False
+      continue
+    with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+      layer_out = build_layer(line, layer_in, reuse = reuse)
+      layer_in = layer_out
+      count_layer += 1
+      if is_bn_layer:
+        bn_out = layer_out
+  logits = layer_out
+  return logits, bn_out
+
+
 def scan_subnnet(nnet_proto_file):
   nnet_proto = open(nnet_proto_file, 'r')
   count_subnnet = 0
@@ -119,59 +153,6 @@ def build_layer(line, layer_in, seq_length = None, keep_in_prob = None, keep_out
     layer_out = layer.blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = reuse)
 
   return layer_out
-
-
-def inference_from_file(feats_holder, input_dim, output_dim, init_file):
-  layer_in = feats_holder
-  nnet = open(init_file, 'r')
-  line = nnet.readline()
-  assert line.startswith('<Nnet>')
-  i = 0
-  for line in nnet:
-    if line.startswith('</Nnet>'):
-      break
-    if line.startswith('<AffineTransform>'):
-      info = line.split()
-      dim_out = int(info[1])
-      dim_in = int(info[2])
-      line = nnet.readline()
-      assert line.startswith('<LearnRateCoef>')
-      line = nnet.readline()
-      assert line.strip().startswith('[')
-      line = nnet.readline().strip()
-      
-      mat = []
-      while not line.startswith('['):
-        if line.endswith(']'):
-          line = line.strip(']').strip()
-        mat.append(list(map(float, line.split())))
-        line = nnet.readline().strip()
-
-      w = list(zip(*mat))
-      b = list(map(float, line.split()[1:-1]))
-      
-      line = nnet.readline()
-      assert line.startswith('<!EndOfComponent>')
-
-      line = nnet.readline()
-      if line.startswith('<Sigmoid>'):
-        with tf.variable_scope('hidden'+str(i+1)):
-          weights = tf.Variable(w, name='weights')
-          biases = tf.Variable(b, name='biases')
-          layer_out = tf.sigmoid(tf.matmul(layer_in, weights) + biases)
-      elif line.startswith('<Softmax>'):
-        with tf.variable_scope('softmax_linear'):
-          weights = tf.Variable(w, name='weights')
-          biases = tf.Variable(b, name='biases')
-          logits = tf.add(tf.matmul(layer_in, weights), biases, name = 'logits')
-
-      line = nnet.readline()
-      assert line.startswith('<!EndOfComponent>')
-
-      layer_in = layer_out
-      i += 1
-
-  return logits
 
 
 def loss_dnn(logits, labels):
