@@ -234,13 +234,21 @@ class LSTM(object):
   def get_loss(self):
     return self.loss
 
-
+  
   def get_eval_acc(self):
     return self.eval_acc
 
 
   def get_train_op(self):
     return self.train_op
+
+
+  def get_logits(self):
+    return self.logits
+
+  
+  def get_outputs(self):
+    return self.outputs
 
 
   def prep_feed(self, x, y, seq_length, mask, 

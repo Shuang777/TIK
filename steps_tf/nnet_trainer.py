@@ -27,6 +27,7 @@ class NNTrainer(object):
     self.graph = None
     self.sess = None
     self.batch_size = batch_size
+    self.max_length = max_length
     self.jitter_window = jitter_window
     self.num_gpus = num_gpus
     self.use_gpu = use_gpu
