@@ -22,6 +22,8 @@ class DataGenerator:
     self.max_length = conf.get('max_length', 2000)
     self.sliding_window = conf.get('sliding_window', 20)
     self.jitter_window = conf.get('jitter_window', 0)
+    self.feat_type = conf.get('feat_type', 'raw')
+    self.delta_opts = conf.get('delta_opts', '')
 
     self.loop = loop    # keep looping over dataset
     self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
@@ -35,17 +37,23 @@ class DataGenerator:
     cmd = "cat %s/feats.scp | utils/shuffle_list.pl --srand %d > %s/shuffle.%s.scp" % (data, seed, exp, self.name)
     Popen(cmd, shell=True).communicate()
 
+    # prepare feature pipeline
     cmd = ['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
                  'scp:' + self.data + '/cmvn.scp',
                  'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:-']
     
-    cmd += ['|', 'splice-feats', 'ark:-','ark:-', '|', 'transform-feats', exp+'/final.mat', 'ark:-', 'ark:-']
+    if self.feat_type == 'delta':
+      cmd.extend(['|', 'add-deltas', self.delta_opts, 'ark:-', 'ark:-'])
+    elif self.feat_type in ['lda', 'fmllr']:
+      cmd.extend(['|', 'splice-feats', 'ark:-','ark:-'])
+      cmd.extend(['|', 'transform-feats', exp+'/final.mat', 'ark:-', 'ark:-'])
 
-    if os.path.exists(trans_dir+'/trans.1'):
-      cmd += ['|', 'transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
-              '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-']
+    if self.feat_type == 'fmllr':
+      assert os.path.exists(trans_dir+'/trans.1') 
+      cmd.extend(['|', 'transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
+              '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-'])
     
-    cmd += ['|', 'copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp']
+    cmd.extend(['|', 'copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
     Popen(' '.join(cmd), shell=True).communicate()
 
     if name == 'train':

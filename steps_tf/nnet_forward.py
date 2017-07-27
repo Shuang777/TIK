@@ -9,7 +9,6 @@ import argparse
 from time import sleep
 from subprocess import Popen, PIPE, DEVNULL
 from six.moves import configparser
-from signal import signal, SIGPIPE, SIG_DFL
 from nnet_trainer import NNTrainer
 import section_config
 
@@ -34,26 +33,48 @@ arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--use-gpu', dest = 'use_gpu', action = 'store_true')
 arg_parser.add_argument('--sleep', type = int)
 arg_parser.add_argument('--prior-counts', type = str, default = None)
-arg_parser.add_argument('config_file', type = str)
+arg_parser.add_argument('--trans-dir', type = str, default = None)
+arg_parser.add_argument('data', type = str)
 arg_parser.add_argument('model_file', type = str)
 arg_parser.set_defaults(use_gpu = False)
 args = arg_parser.parse_args()
 
+srcdir = os.path.dirname(args.model_file)
+
 config = configparser.ConfigParser()
-config.read(args.config_file)
+config.read(srcdir+'/config')
 
 feature_conf = section_config.parse(config.items('feature'))
 nnet_conf = section_config.parse(config.items('nnet'))
 optimizer_conf = section_config.parse(config.items('optimizer'))
 nnet_train_conf = section_config.parse(config.items('nnet-train'))
 
-srcdir = os.path.dirname(args.model_file)
-
 input_dim = int(open(srcdir+'/input_dim').read())
 output_dim = int(open(srcdir+'/output_dim').read())
 max_length = feature_conf.get('max_length', None)
 jitter_window = feature_conf.get('jitter_window', None)
 splice = feature_conf['context_width']
+
+# prepare feature pipeline
+feat_type = feature_conf.get('feat_type', 'raw')
+delta_opts = feature_conf.get('delta_opts', '')
+cmd = ['apply-cmvn', '--utt2spk=ark:' + args.data + '/utt2spk', 
+       'scp:' + args.data + '/cmvn.scp', 
+       'scp:' + args.data + '/feats.scp', 'ark:-']
+    
+if feat_type == 'delta':
+  cmd.extend(['|', 'add-deltas', delta_opts, 'ark:-', 'ark:-'])
+elif feat_type in ['lda', 'fmllr']:
+  cmd.extend(['|', 'splice-feats', 'ark:-','ark:-'])
+  cmd.extend(['|', 'transform-feats', srcdir + '/final.mat', 'ark:-', 'ark:-'])
+
+if feat_type == 'fmllr':
+  assert os.path.exists(args.trans_dir+'/trans.1')
+  cmd.extend(['|', 'transform-feats','--utt2spk=ark:' + args.data + '/utt2spk',
+          '\'ark:cat %s/trans.* |\'' % args.trans_dir, 'ark:-', 'ark:-'])
+
+#print(cmd)
+feat_pipe = Popen(' '.join(cmd), shell = True, stdout=PIPE)
 
 # set gpu
 logger.info("use-gpu: %s", str(args.use_gpu))
@@ -74,16 +95,14 @@ if args.prior_counts is not None:
   priors = prior_counts / prior_counts.sum()
   log_priors = np.log(priors)
 
-ark_in = sys.stdin.buffer
-#ark_in = open('stdin','r')
+ark_in = feat_pipe.stdout
 ark_out = sys.stdout.buffer
 encoding = sys.stdout.encoding
-signal (SIGPIPE, SIG_DFL)
 
 # here we are doing context window and feature normalization
 p1 = Popen(['splice-feats', '--print-args=false', '--left-context='+str(splice), 
             '--right-context='+str(splice), 'ark:-', 'ark:-'], 
-            stdin=ark_in, stdout=PIPE, stderr=DEVNULL)
+            stdin = ark_in, stdout=PIPE, stderr=DEVNULL)
 p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', srcdir+'/cmvn.mat', 
              'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
@@ -101,6 +120,7 @@ while True:
 
   kaldi_IO.write_utterance(uid, nnet_out, ark_out, encoding)
 
+feat_pipe.stdout.close()
 p1.stdout.close()
 
 
