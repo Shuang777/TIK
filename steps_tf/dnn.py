@@ -144,15 +144,25 @@ class DNN(object):
     assumes self.logits, self.labels_holder in place'''
     with graph.as_default():
 
+      # record variables we have already initialized
+      variables_before = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+
       loss = nnet.loss_dnn(self.logits, self.labels_holder)
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
+      # train op may introduce new variables
       train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
       eval_acc = nnet.evaluation_dnn(self.logits, self.labels_holder)
+      # and thus we need to intialize them
+      variables_after = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+      new_variables = list(set(variables_after) - set(variables_before))
+      init_train_op = tf.variables_initializer(new_variables)
       
     self.loss = loss
     self.learning_rate_holder = learning_rate_holder
     self.train_op = train_op
     self.eval_acc = eval_acc
+
+    self.init_train_op = init_train_op
 
 
   def init_training_dnn_multi(self, graph, optimizer_conf):
@@ -162,6 +172,8 @@ class DNN(object):
 
     with graph.as_default(), tf.device('/cpu:0'):
       
+      variables_before = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
       assert optimizer_conf['op_type'].lower() == 'sgd'
       opt = tf.train.GradientDescentOptimizer(learning_rate_holder)
@@ -186,11 +198,19 @@ class DNN(object):
       train_op = opt.apply_gradients(grads)
       losses = tf.reduce_sum(tower_losses)
       accs = tf.reduce_sum(tower_accs)
+      # initialize op for variables introduced in optimizer
+      variables_after = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+      new_variables = list(set(variables_after) - set(variables_before))
+      init_train_op = tf.variables_initializer(new_variables)
 
     self.loss = losses
     self.eval_acc = accs
     self.learning_rate_holder = learning_rate_holder
     self.train_op = train_op
+
+
+  def get_init_train_op(self):
+    return self.init_train_op
 
 
   def get_loss(self):

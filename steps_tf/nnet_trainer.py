@@ -118,6 +118,7 @@ class NNTrainer(object):
   def init_training(self, optimizer_conf):
     assert self.graph is not None
     self.model.init_training(self.graph, optimizer_conf)
+    self.sess.run(self.model.get_init_train_op())
 
  
   def prepare_feed(self, train_gen, learning_rate, keep_in_prob, keep_out_prob):
