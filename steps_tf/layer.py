@@ -78,8 +78,10 @@ def lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False)
   info_dict = info2dict(info)
   
   num_cell = int(info_dict['<NumCells>'])
+  use_peepholes = info_dict.get('<UsePeepHoles>', 'False').lower() == 'true'
 
-  cell = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple=True, reuse = reuse)
+  cell = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                 use_peepholes = use_peepholes)
 
   cell = tf.contrib.rnn.DropoutWrapper(cell = cell, input_keep_prob = keep_in_prob, 
                                        output_keep_prob = keep_out_prob)
@@ -97,20 +99,23 @@ def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False
   info_dict = info2dict(info)
   
   num_cell = int(info_dict['<NumCells>'])
+  use_peepholes = info_dict.get('<UsePeepHoles>', 'False').lower() == 'true'
 
-  cell_fw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple=True, reuse = reuse)
-  cell_bw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple=True, reuse = reuse)
+  cell_fw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                    use_peepholes = True)
+  cell_bw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                    use_peepholes = True)
 
   cell_fw = tf.contrib.rnn.DropoutWrapper(cell = cell_fw, input_keep_prob = keep_in_prob, 
                                           output_keep_prob = keep_out_prob)
   cell_bw = tf.contrib.rnn.DropoutWrapper(cell = cell_bw, input_keep_prob = keep_in_prob, 
                                           output_keep_prob = keep_out_prob)
 
-  layer_out,_ = tf.nn.bidirectional_dynamic_rnn(cell_fw, 
+  rnn_outs,_ = tf.nn.bidirectional_dynamic_rnn(cell_fw, 
                   cell_bw,
                   layer_in,
                   sequence_length = seq_length,
                   dtype=tf.float32)
 
-  
+  layer_out = tf.concat(rnn_outs, 2)
   return layer_out

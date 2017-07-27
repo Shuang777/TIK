@@ -129,7 +129,8 @@ def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file,
   return logits
 
 
-def build_layer(line, layer_in, seq_length = None, keep_in_prob = None, keep_out_prob = None, reuse = False):
+def build_layer(line, layer_in, seq_length = None, keep_in_prob = None, 
+                keep_out_prob = None, reuse = False):
   layer_type, info = line.split(' ', 1)
   if layer_type == '<AffineTransform>':
     layer_out = layer.affine_transform(info, layer_in)
