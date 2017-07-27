@@ -204,9 +204,11 @@ class DNN(object):
       init_train_op = tf.variables_initializer(new_variables)
 
     self.loss = losses
-    self.eval_acc = accs
     self.learning_rate_holder = learning_rate_holder
     self.train_op = train_op
+    self.eval_acc = accs
+
+    self.init_train_op = init_train_op
 
 
   def get_init_train_op(self):

@@ -198,6 +198,8 @@ class LSTM(object):
     self.train_op = train_op
     self.eval_acc = eval_acc
 
+    self.init_train_op = init_train_op
+
  
   def init_training_lstm_multi(self, graph, optimizer_conf):
     tower_losses = []
@@ -241,9 +243,11 @@ class LSTM(object):
       init_train_op = tf.variables_initializer(new_variables)
 
     self.loss = losses
-    self.eval_acc = accs
     self.learning_rate_holder = learning_rate_holder
     self.train_op = train_op
+    self.eval_acc = accs
+
+    self.init_train_op = init_train_op
 
   
   def get_init_train_op(self):
