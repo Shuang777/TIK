@@ -33,7 +33,7 @@ arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--use-gpu', dest = 'use_gpu', action = 'store_true')
 arg_parser.add_argument('--sleep', type = int)
 arg_parser.add_argument('--prior-counts', type = str, default = None)
-arg_parser.add_argument('--trans-dir', type = str, default = None)
+arg_parser.add_argument('--transform', type = str, default = None)
 arg_parser.add_argument('data', type = str)
 arg_parser.add_argument('model_file', type = str)
 arg_parser.set_defaults(use_gpu = False)
@@ -69,9 +69,9 @@ elif feat_type in ['lda', 'fmllr']:
   cmd.extend(['|', 'transform-feats', srcdir + '/final.mat', 'ark:-', 'ark:-'])
 
 if feat_type == 'fmllr':
-  assert os.path.exists(args.trans_dir+'/trans.1')
+  assert os.path.exists(args.transform)
   cmd.extend(['|', 'transform-feats','--utt2spk=ark:' + args.data + '/utt2spk',
-          '\'ark:cat %s/trans.* |\'' % args.trans_dir, 'ark:-', 'ark:-'])
+          'ark:%s' % args.transform, 'ark:-', 'ark:-'])
 
 #print(cmd)
 feat_pipe = Popen(' '.join(cmd), shell = True, stdout=PIPE)

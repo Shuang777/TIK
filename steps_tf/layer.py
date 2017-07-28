@@ -98,7 +98,7 @@ def lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False)
 def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False):
   info_dict = info2dict(info)
   
-  num_cell = int(info_dict['<NumCells>'])
+  num_cell = int(info_dict['<NumCells>']) / 2
   use_peepholes = info_dict.get('<UsePeepHoles>', 'False').lower() == 'true'
 
   cell_fw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,

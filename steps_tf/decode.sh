@@ -68,10 +68,23 @@ for f in $graphdir/HCLG.fst $data/feats.scp $srcdir/tree; do
   [ ! -f $f ] && echo "$0: no such file $f" && exit 1;
 done
 
+if [ ! -z $transform_dir ]; then
+  # we need to verify transforms for fmllr
+  [ ! -f $transform_dir/trans.1 ] && echo "Cannot find $transform_dir/trans.1" && exit 1
+  nj_orig=$(cat $transform_dir/num_jobs)
+  if [ $nj -eq $nj_orig ]; then
+    trans=trans.JOB
+  else
+    for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
+       copy-feats ark:- ark,scp:$dir/$trans.ark,$dir/$trans.scp
+    trans=trans.ark
+  fi
+fi
+
 if [ $stage -le 0 ]; then
   $cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
     python3 steps_tf/nnet_forward.py --prior-counts $srcdir/ali_train_pdf.counts \
-    --trans-dir $transform_dir $sdata/JOB $srcdir/$model_name  \| \
+    --transform $transform_dir/$trans $sdata/JOB $srcdir/$model_name  \| \
     latgen-faster-mapped --max-active=$max_active --beam=$beam --lattice-beam=$latbeam \
     --acoustic-scale=$acwt --allow-partial=true --word-symbol-table=$graphdir/words.txt \
     $srcdir/final.mdl $graphdir/HCLG.fst ark:- "ark:|gzip -c > $dir/lat.JOB.gz"

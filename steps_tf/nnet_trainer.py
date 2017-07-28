@@ -33,6 +33,7 @@ class NNTrainer(object):
     self.num_gpus = num_gpus
     self.use_gpu = use_gpu
     self.summary_dir = summary_dir
+    self.wait_gpu = True
 
     if self.arch == 'dnn':
       self.model = DNN(input_dim, output_dim, batch_size, num_gpus)
@@ -92,7 +93,13 @@ class NNTrainer(object):
       p1 = Popen (['pick-gpu', str(self.num_gpus)], stdout=PIPE)
       gpu_ids = str(p1.stdout.read(), 'utf-8')
       if gpu_ids == "-1":
-        raise RuntimeError("Picking gpu failed")
+        if self.wait_gpu:
+          while(gpu_ids == "-1"):
+            time.sleep(10)
+            p1 = Popen (['pick-gpu', str(self.num_gpus)], stdout=PIPE)
+            gpu_ids = str(p1.stdout.read(), 'utf-8')
+        else:
+          raise RuntimeError("Picking gpu failed")
       os.environ['CUDA_VISIBLE_DEVICES'] = gpu_ids
     else:
       os.environ['CUDA_VISIBLE_DEVICES'] = ''
