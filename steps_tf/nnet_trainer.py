@@ -12,7 +12,7 @@ from dnn import DNN
 from bn import BN
 from lstm import LSTM
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('__main__')
 logger.setLevel(logging.INFO)
 
 class NNTrainer(object):
@@ -94,8 +94,9 @@ class NNTrainer(object):
       gpu_ids = str(p1.stdout.read(), 'utf-8')
       if gpu_ids == "-1":
         if self.wait_gpu:
+          logger.info("Waiting for gpus")
           while(gpu_ids == "-1"):
-            time.sleep(10)
+            time.sleep(5)
             p1 = Popen (['pick-gpu', str(self.num_gpus)], stdout=PIPE)
             gpu_ids = str(p1.stdout.read(), 'utf-8')
         else:
@@ -107,10 +108,10 @@ class NNTrainer(object):
 
   def init_nnet(self, nnet_proto_file, seed = 777):
     self.graph = tf.Graph()
-    self.set_gpu()
 
     self.model.init(self.graph, nnet_proto_file, seed)
 
+    self.set_gpu()
     assert self.sess == None
     self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(allow_soft_placement=True))
     self.sess.run(self.model.get_init_all_op())

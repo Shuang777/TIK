@@ -19,7 +19,6 @@ def read_int_or_none(file_name):
   else:
     return None
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stderr))
