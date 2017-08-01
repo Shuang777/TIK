@@ -186,7 +186,11 @@ class LSTM(object):
 
       loss = nnet.loss_lstm(self.logits, self.labels_holder, self.mask_holder)
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
-      train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
+      #train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
+      opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
+      grads = nnet.get_gradients(opt, loss)
+      train_op = nnet.apply_gradients(optimizer_conf, opt, grads)
+
       eval_acc = nnet.evaluation_lstm(self.logits, self.labels_holder, self.mask_holder)
       
       variables_after = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
@@ -212,8 +216,7 @@ class LSTM(object):
       variables_before = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
 
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
-      assert optimizer_conf['op_type'].lower() == 'sgd'
-      opt = tf.train.GradientDescentOptimizer(learning_rate_holder)
+      opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
 
       for i in range(self.num_towers):
         with tf.device('/gpu:%d' % i):
@@ -227,13 +230,13 @@ class LSTM(object):
 
             loss = nnet.loss_lstm(self.tower_logits[i], tower_labels_holder, tower_mask_holder)
             tower_losses.append(loss)
-            grads = opt.compute_gradients(loss)
+            grads = nnet.get_gradients(opt, loss)
             tower_grads.append(grads)
             eval_acc = nnet.evaluation_lstm(self.tower_logits[i], tower_labels_holder, tower_mask_holder)
             tower_accs.append(eval_acc)
 
       grads = nnet.average_gradients(tower_grads)
-      train_op = opt.apply_gradients(grads)
+      train_op = nnet.apply_gradients(optimizer_conf, opt, grads)
       losses = tf.reduce_sum(tower_losses)
       accs = tf.reduce_sum(tower_accs)
       

@@ -182,7 +182,7 @@ def loss_lstm(logits, labels, mask):
   return loss
 
 
-def training(op_conf, loss, learning_rate_holder, scopes = None):
+def prep_optimizer(op_conf, learning_rate_holder):
   ''' learning_rate is a place holder
   loss is output of logits
   '''
@@ -194,13 +194,27 @@ def training(op_conf, loss, learning_rate_holder, scopes = None):
     op = tf.train.AdagradOptimizer(learning_rate = learning_rate_holder)
   elif op_conf['op_type'] in ['adam', 'Adam']:
     op = tf.train.AdamOptimizer(learning_rate = learning_rate_holder)
+
+  return op
+
+
+def get_gradients(opt, loss, scopes = None):
   if scopes == None:
-    train_op = op.minimize(loss)
+    grads = opt.compute_gradients(loss)
   else:
     train_vars = []
     for scope in scopes:
       train_vars += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
-    train_op = op.minimize(loss, var_list = train_vars)
+    grads = opt.compute_gradients(loss, train_vars)
+  return grads
+
+
+def apply_gradients(op_conf, opt, grads):
+  if op_conf.get('clip_gradients', False):
+    for i, (g, v) in enumerate(grads):
+      if g is not None:
+        grads[i] = (tf.clip_by_norm(g, 5), v)
+  train_op = opt.apply_gradients(grads)
   return train_op
 
 

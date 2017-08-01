@@ -15,6 +15,9 @@ from lstm import LSTM
 logger = logging.getLogger('__main__')
 logger.setLevel(logging.INFO)
 
+iter_logger = logging.getLogger(__name__)
+iter_logger.setLevel(logging.INFO)
+
 class NNTrainer(object):
   '''
   a class for a neural network that can be used together with Kaldi.
@@ -161,7 +164,7 @@ class NNTrainer(object):
     assert self.batch_size*self.num_gpus == train_gen.get_batch_size()
 
     fh = logging.FileHandler(logfile, mode = 'w')
-    logger.addHandler(fh)
+    iter_logger.addHandler(fh)
 
     sum_avg_loss = 0
     sum_accs = 0
@@ -197,7 +200,7 @@ class NNTrainer(object):
 
         # Print status to stdout.
         if count_steps % 1000 == 0:
-          logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", 
+          iter_logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", 
                     count_steps, sum_avg_loss / (count_steps*self.num_gpus), 
                     sum_frames, duration, sum_frames / duration, 
                     100.0*acc/train_gen.get_last_batch_frames())
@@ -213,11 +216,11 @@ class NNTrainer(object):
       avg_acc = sum_accs/sum_acc_frames
       avg_acc_str = "%.2f%%" % (100.0*avg_acc)
 
-    logger.info("Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %s", 
+    iter_logger.info("Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %s", 
                 avg_loss, sum_frames, duration, 
                 sum_frames / duration, avg_acc_str)
 
-    logger.removeHandler(fh)
+    iter_logger.removeHandler(fh)
 
     return avg_loss, avg_acc_str
 
