@@ -28,7 +28,7 @@ class DataGenerator:
     self.loop = loop    # keep looping over dataset
     self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
 
-    self.temp_dir = tempfile.mkdtemp(prefix='/data/exp/tmp/')
+    self.temp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
     ## Read number of utterances
     with open (data + '/utt2spk') as f:
