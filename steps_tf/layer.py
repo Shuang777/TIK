@@ -106,7 +106,7 @@ def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False
   use_peepholes = info_dict.get('<UsePeepHoles>', 'False').lower() == 'true'
 
   if '<NumProj>' in info_dict:
-    num_proj = int(info_dict['<NumProj>'])
+    num_proj = int(info_dict['<NumProj>']) / 2
     cell_fw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
                                       use_peepholes = use_peepholes, num_proj = num_proj)
     cell_bw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
