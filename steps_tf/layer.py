@@ -79,9 +79,13 @@ def lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False)
   
   num_cell = int(info_dict['<NumCells>'])
   use_peepholes = info_dict.get('<UsePeepHoles>', 'False').lower() == 'true'
-
-  cell = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
-                                 use_peepholes = use_peepholes)
+  if '<NumProj>' in info_dict:
+    num_proj = int(info_dict['<NumProj>'])
+    cell = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                   use_peepholes = use_peepholes, num_proj = num_proj)
+  else:
+    cell = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                   use_peepholes = use_peepholes)
 
   cell = tf.contrib.rnn.DropoutWrapper(cell = cell, input_keep_prob = keep_in_prob, 
                                        output_keep_prob = keep_out_prob)
@@ -101,10 +105,17 @@ def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False
   num_cell = int(info_dict['<NumCells>']) / 2
   use_peepholes = info_dict.get('<UsePeepHoles>', 'False').lower() == 'true'
 
-  cell_fw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
-                                    use_peepholes = True)
-  cell_bw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
-                                    use_peepholes = True)
+  if '<NumProj>' in info_dict:
+    num_proj = int(info_dict['<NumProj>']) / 2
+    cell_fw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                      use_peepholes = use_peepholes, num_proj = num_proj)
+    cell_bw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                      use_peepholes = use_peepholes, num_proj = num_proj)
+  else:
+    cell_fw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                      use_peepholes = use_peepholes)
+    cell_bw = tf.contrib.rnn.LSTMCell(num_cell, state_is_tuple = True, reuse = reuse,
+                                      use_peepholes = use_peepholes)
 
   cell_fw = tf.contrib.rnn.DropoutWrapper(cell = cell_fw, input_keep_prob = keep_in_prob, 
                                           output_keep_prob = keep_out_prob)

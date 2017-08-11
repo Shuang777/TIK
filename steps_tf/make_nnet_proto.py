@@ -46,10 +46,12 @@ def make_lstm_proto(feat_dim, output_dim, conf, nnet_proto_file):
     affine_layer = 'AffineTransform'
 
   nnet_proto.write("<NnetProto>\n")
-
+  num_proj_str = ""
+  if 'num_proj' in conf:
+    num_proj_str = "<NumProj> %d" % conf['num_proj']
   for i in range(num_hid_layers):
-    nnet_proto.write("<%s> <NumCells> %d <KeepInProb> %f <KeepOutProb> %f <UsePeepHoles> %s\n" % 
-            (lstm_type, num_cells, conf.get('keep_in_prob', 1.0), conf.get('keep_out_prob', 1.0), use_peepholes))
+    nnet_proto.write("<%s> <NumCells> %d <UsePeepHoles> %s %s\n" % 
+            (lstm_type, num_cells, use_peepholes, num_proj_str))
   
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f <LearnRateCoef> %f <BiasLearnRateCoef> %f\n" % \
       (affine_layer, num_cells, output_dim, 0.0, 0.0, \
@@ -125,8 +127,6 @@ def make_nnet_proto(feat_dim, output_dim, conf, nnet_proto_file):
     # This is done by multiplying with stddev(U[0,1]) = sqrt(1/12).
     # The stddev of weights is consequently reduced with scale 0.29,
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
-  if conf.get('keep_prob', 1.0) != 1.0:
-    nnet_proto.write("<Dropout> %f\n" % conf['keep_prob'])
 
   # Internal AffineTransforms,
   for i in range(num_hid_layers-1):
@@ -134,8 +134,6 @@ def make_nnet_proto(feat_dim, output_dim, conf, nnet_proto_file):
           (affine_layer, num_hid_neurons, num_hid_neurons, hid_bias_mean, hid_bias_range, \
            (param_stddev_factor * Glorot(num_hid_neurons, num_hid_neurons, with_glorot))))
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
-    if conf.get('keep_prob', 1.0) != 1.0:
-      nnet_proto.write("<Dropout> %f\n" % conf['keep_prob'])
 
   # Optionaly add bottleneck,
   if bottleneck_dim != 0:
@@ -161,16 +159,12 @@ def make_nnet_proto(feat_dim, output_dim, conf, nnet_proto_file):
        (affine_layer, bottleneck_dim, num_hid_neurons, hid_bias_mean, hid_bias_range, \
         (param_stddev_factor * Glorot(o.bottleneck_dim, num_hid_neurons, with_glorot))))
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
-    if conf.get('keep_prob', 1.0) != 1.0:
-      nnet_proto.write("<Dropout> %s\n" % conf['keep_prob'])
 
     for i in range(num_hid_layers_after_bn-1):
       nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
             (affine_layer, num_hid_neurons, num_hid_neurons, hid_bias_mean, hid_bias_range, \
              (param_stddev_factor * Glorot(num_hid_neurons, num_hid_neurons, with_glorot))))
       nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
-      if conf.get('keep_prob', 1.0) != 1.0:
-        nnet_proto.write("<Dropout> %f\n" % conf['keep_prob'])
 
   # Last AffineTransform (10x smaller learning rate on bias)
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
