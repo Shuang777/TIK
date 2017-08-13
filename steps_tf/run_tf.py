@@ -20,7 +20,7 @@ logger.addHandler(logging.StreamHandler(sys.stdout))
 
 #get number of output labels
 def get_model_pdfs (gmm):
-  p1 = Popen (['hmm-info', '%s/final.mdl' % gmm], stdout=PIPE)
+  p1 = Popen (['hmm-info', '%s/final.mdl' % gmm], stdout = PIPE)
   for line in p1.stdout.read().splitlines():
     if 'pdfs' in str(line):
       return int(line.split()[-1])
@@ -32,7 +32,7 @@ def match_iter_model(directory, model_base):
 
 def get_alignments(exp, ali_dir):
   p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
-               'ark,t:-'], stdout=PIPE)
+               'ark,t:-'], stdout = PIPE)
   ali_labels = {}
   for line in p1.stdout:
     line = line.split()
@@ -57,10 +57,6 @@ exp         = sys.argv[5]
 os.path.isdir(exp) or os.makedirs (exp)
 os.path.isdir(exp+'/log') or os.makedirs (exp+'/log')
 os.path.isdir(exp+'/nnet') or os.makedirs (exp+'/nnet')
-
-# log to file
-logger.addHandler(logging.FileHandler(exp+'/log/train.log', mode = 'w'))
-logger.info("### command line: %s", " ".join(sys.argv))
 
 # copy necessary files
 shutil.copyfile(gmm+'/tree', exp+'/tree')
@@ -215,13 +211,13 @@ for i in range(max_iters):
     loss = loss_cv
     mlp_best = mlp_current
     nnet.write(mlp_best)
-    open(exp+'/iter%02d.model.txt'%(i+1), 'w').write(mlp_best)
+    open(exp+'/nnet/iter%02d.model.txt'%(i+1), 'w').write(mlp_best)
     logger.info("%s nnet accepted %s, acc_tr %s, acc_cv %s", log_info, mlp_best.split('/')[-1], acc_tr, acc_cv)
     open(exp + '/.mlp_best', 'w').write(mlp_best)
   else:
     mlp_rej = mlp_current + "_rejected"
     nnet.write(mlp_rej)
-    open(exp+'/iter%02d.model.txt'%(i+1), 'w').write(mlp_rej)
+    open(exp+'/nnet/iter%02d.model.txt'%(i+1), 'w').write(mlp_rej)
     logger.info("%s nnet rejected %s, acc_tr %s, acc_cv %s", log_info, mlp_rej.split('/')[-1], acc_tr, acc_cv)
     nnet.read(mlp_best)
 

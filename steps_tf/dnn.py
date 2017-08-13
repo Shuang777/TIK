@@ -150,7 +150,11 @@ class DNN(object):
       loss = nnet.loss_dnn(self.logits, self.labels_holder)
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
       # train op may introduce new variables
-      train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
+      #train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
+      opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
+      grads = nnet.get_gradients(opt, loss)
+      train_op = nnet.apply_gradients(optimizer_conf, opt, grads)
+      
       eval_acc = nnet.evaluation_dnn(self.logits, self.labels_holder)
       # and thus we need to intialize them
       variables_after = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)

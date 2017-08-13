@@ -67,18 +67,23 @@ class NNTrainer(object):
   def read(self, filename):
     filename = filename.strip()
 
-    if self.graph is None:
-      self.graph = tf.Graph()
+    first_session = True
+    if self.sess is not None:
+      self.sess.close()
+      tf.reset_default_graph()
+      first_session = False
+
+    self.graph = tf.Graph()
 
     with self.graph.as_default():
       self.saver = tf.train.import_meta_graph(filename+'.meta')
 
     self.model.read_from_file(self.graph, self.use_gpu)
 
-    if self.sess is None:
-      # this is the first reading a graph
+    if first_session:
       self.set_gpu()
-      self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(allow_soft_placement=True))
+
+    self.sess = tf.Session(graph=self.graph, config=tf.ConfigProto(allow_soft_placement=True))
 
     with self.graph.as_default():
       self.saver.restore(self.sess, filename)
