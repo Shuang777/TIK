@@ -53,8 +53,9 @@ def make_lstm_proto(feat_dim, output_dim, conf, nnet_proto_file):
     nnet_proto.write("<%s> <NumCells> %d <UsePeepHoles> %s %s\n" % 
             (lstm_type, num_cells, use_peepholes, num_proj_str))
   
+  lstm_out_dim = conf['num_proj'] if 'num_proj' in conf else num_cells
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f <LearnRateCoef> %f <BiasLearnRateCoef> %f\n" % \
-      (affine_layer, num_cells, output_dim, 0.0, 0.0, \
+      (affine_layer, lstm_out_dim, output_dim, 0.0, 0.0, \
        (param_stddev_factor * Glorot(num_cells, output_dim, with_glorot)), 1.0, 0.1))
 
   nnet_proto.write("</NnetProto>\n")
