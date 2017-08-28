@@ -84,7 +84,7 @@ if [ $stage -le 0 ]; then
   $cmd JOB=1:$nj $dir/log/align.JOB.log \
     compile-train-graphs $dir/tree $dir/final.mdl $lang/L.fst "$tra" ark:- \| \
     align-compiled-mapped $scale_opts --beam=$beam --retry-beam=$retry_beam $dir/final.mdl ark:- \
-      "$feats" "ark,t:|gzip -c >$dir/ali.JOB.gz"
+      "$feats" "ark:|gzip -c >$dir/ali.JOB.gz"
 fi
 
 # Optionally align to lattice format (handy to get word alignment)
