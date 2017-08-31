@@ -33,9 +33,12 @@ arg_parser.add_argument('--use-gpu', dest = 'use_gpu', action = 'store_true')
 arg_parser.add_argument('--sleep', type = int)
 arg_parser.add_argument('--prior-counts', type = str, default = None)
 arg_parser.add_argument('--transform', type = str, default = None)
+arg_parser.add_argument('--apply_log', dest = 'apply_log', action = 'store_true')
+arg_parser.add_argument('--no-softmax', dest = 'no_softmax', action = 'store_true')
+arg_parser.add_argument('--verbose', dest = 'verbose', action = 'store_true')
 arg_parser.add_argument('data', type = str)
 arg_parser.add_argument('model_file', type = str)
-arg_parser.set_defaults(use_gpu = False)
+arg_parser.set_defaults(use_gpu = False, apply_log = False, no_softmax = False, verbose = False)
 args = arg_parser.parse_args()
 
 srcdir = os.path.dirname(args.model_file)
@@ -75,6 +78,9 @@ if feat_type == 'fmllr':
 #print(cmd)
 feat_pipe = Popen(' '.join(cmd), shell = True, stdout=PIPE)
 
+if args.apply_log and args.no_softmax:
+  raise RuntimeError("Cannot use both --apply-log --no-softmax")
+
 # set gpu
 logger.info("use-gpu: %s", str(args.use_gpu))
 num_gpus = nnet_train_conf.get('num_gpus', 1)
@@ -105,19 +111,25 @@ p1 = Popen(['splice-feats', '--print-args=false', '--left-context='+str(splice),
 p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', srcdir+'/cmvn.mat', 
              'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
+count = 0
 while True:
   uid, feats = kaldi_IO.read_utterance(p2.stdout)
   if uid == None:
     # we are done
     break
 
-  log_post = nnet.predict (feats, take_log = False)
-  nnet_out = log_post
+  nnet_out = nnet.predict (feats, no_softmax = args.no_softmax)
+  if args.apply_log:
+    nnet_out = np.log(nnet_log)
+
   if args.prior_counts is not None:
-    log_likes = log_post - log_priors
+    log_likes = nnet_out - log_priors
     nnet_out = log_likes
 
   kaldi_IO.write_utterance(uid, nnet_out, ark_out, encoding)
+  count += 1
+  if args.verbose and count % 100 == 0:
+    logger.info("%d utterances processed" % count)
 
 feat_pipe.stdout.close()
 p1.stdout.close()

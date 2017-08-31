@@ -287,19 +287,19 @@ class NNTrainer(object):
     return feats_packed, seq_length, post_pick
 
 
-  def predict(self, feats, take_log = True):
+  def predict(self, feats, no_softmax = False):
     if self.arch == 'dnn':
-      posts = self.predict_dnn(feats, take_log)
+      posts = self.predict_dnn(feats, no_softmax)
     elif self.arch == 'bn':
-      posts = self.gen_bn_feats(feats, take_log)
+      posts = self.gen_bn_feats(feats, no_softmax)
     elif self.arch == 'lstm':
-      posts = self.predict_lstm(feats, take_log)
+      posts = self.predict_lstm(feats, no_softmax)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
     return posts
 
 
-  def predict_dnn(self, feats, take_log = True):
+  def predict_dnn(self, feats, no_softmax = False):
     '''
     args: 
       feats: np 2-d array of size[num_frames, feat_dim]
@@ -318,10 +318,10 @@ class NNTrainer(object):
       
       feed_dict = self.model.prep_forward_feed(feats_padded)
 
-      if take_log:
-        batch_posts = self.sess.run(self.model.get_outputs(), feed_dict=feed_dict)
-      else:
+      if no_softmax:
         batch_posts = self.sess.run(self.model.get_logits(), feed_dict=feed_dict)
+      else:
+        batch_posts = self.sess.run(self.model.get_outputs(), feed_dict=feed_dict)
       posts.append(batch_posts)
 
     posts = np.vstack(posts)
@@ -329,7 +329,7 @@ class NNTrainer(object):
     return posts[0:len(feats),:]
 
 
-  def gen_bn_feats(self, feats, take_log = True):
+  def gen_bn_feats(self):
     '''
     args: 
       feats: np 2-d array of size[num_frames, feat_dim]
@@ -356,7 +356,7 @@ class NNTrainer(object):
     return bn_outs[0:len(feats),:]
 
 
-  def predict_lstm(self, feats, take_log = True):
+  def predict_lstm(self, feats, no_softmax = False):
     '''
     we need a sliding window to generate frame posteriors
     args: 
@@ -377,10 +377,10 @@ class NNTrainer(object):
 
       feed_dict = self.model.prep_forward_feed(feats_batch, seq_length_batch, 1.0, 1.0)
 
-      if take_log:
-        batch_posts = self.sess.run(self.model.get_outputs(), feed_dict=feed_dict)
-      else:
+      if no_softmax:
         batch_posts = self.sess.run(self.model.get_logits(), feed_dict=feed_dict)
+      else:
+        batch_posts = self.sess.run(self.model.get_outputs(), feed_dict=feed_dict)
       # batch_posts of size [batch_size, max_len, num_targets]
 
       for piece in range(self.batch_size):
