@@ -30,28 +30,16 @@ def match_iter_model(directory, model_base):
     if fnmatch.fnmatch(file, model_base+'*') and file.endswith(".index"):
       return file
 
-def get_alignments(exp, ali_dir):
-  p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
-               'ark,t:-'], stdout = PIPE)
-  ali_labels = {}
-  for line in p1.stdout:
-    line = line.split()
-    utt = line[0].decode(sys.stdout.encoding)
-    ali_labels[utt] = [int(i) for i in line[1:]]
-  return ali_labels
-
-
 if __name__ != '__main__':
   raise ImportError ('This script can only be run, and can\'t be imported')
 
-if len(sys.argv) != 6:
-  raise TypeError ('USAGE: run_tf.py data_tr ali_tr gmm_dir dnn_dir')
+if len(sys.argv) != 5:
+  raise TypeError ('USAGE: run_tf_sid.py config data_tr utt2spk dnn_dir')
 
-config_file = sys.argv[1]
-data        = sys.argv[2]
-ali_dir     = sys.argv[3]
-gmm         = sys.argv[4]
-exp         = sys.argv[5]
+config_file  = sys.argv[1]
+data         = sys.argv[2]
+utt2spk_file = sys.argv[3]
+exp          = sys.argv[4]
 
 # prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
@@ -60,8 +48,6 @@ os.path.isdir(exp+'/nnet') or os.makedirs (exp+'/nnet')
 
 # copy necessary files
 shutil.copyfile(gmm+'/final.mat', exp+'/final.mat')
-shutil.copyfile(gmm+'/tree', exp+'/tree')
-Popen (['copy-transition-model', '--binary=false', gmm+'/final.mdl' ,exp+'/final.mdl']).communicate()
 
 # read config file
 config = configparser.ConfigParser()
@@ -85,18 +71,13 @@ summary_dir = config.get('general', 'summary_dir', fallback = None)
 summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
 
 # separate data into 10% cv and 90% training
-Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
+Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
 # Generate pdf indices
-ali_labels = get_alignments(exp, ali_dir)
+utt2spk, num_spks = load_utt2spk(utt2spk_file)
 
 # prepare training data generator
-if nnet_conf['nnet_arch'] == 'lstm':
-  data_gen_type = 'utterance'
-elif nnet_conf['nnet_arch'] in ['dnn', 'bn']:
-  data_gen_type = 'frame'
-else:
-  raise RuntimeError("nnet_arch %s not supported yet", nnet_conf['nnet_arch'])
+data_gen_type = 'uttspk'
 
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
@@ -111,26 +92,14 @@ atexit.register(cv_gen.clean)
 
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
-output_dim = get_model_pdfs(gmm)
+output_dim = num_spks
 max_length = feature_conf.get('max_length', None)
-sliding_window = feature_conf.get('sliding_window', None)
-jitter_window = feature_conf.get('jitter_window', None)
-
-# save alignment priors
-tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
 
 # save input_dim and output_dim
 open(exp+'/input_dim', 'w').write(str(input_dim))
 open(exp+'/output_dim', 'w').write(str(output_dim))
 if max_length is not None:
   open(exp+'/max_length', 'w').write(str(max_length))
-if sliding_window is not None:
-  open(exp+'/sliding_window', 'w').write(str(sliding_window))
-if jitter_window is not None:
-  open(exp+'/jitter_window', 'w').write(str(jitter_window))
-
-if 'init_file' in scheduler_conf:
-  logger.info("Initializing graph using %s", scheduler_conf['init_file'])
 
 nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
                  feature_conf['batch_size'], num_gpus = num_gpus,
