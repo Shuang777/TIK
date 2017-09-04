@@ -62,6 +62,67 @@ def make_lstm_proto(feat_dim, output_dim, conf, nnet_proto_file):
   nnet_proto.close()
 
 
+def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
+  nnet_proto = open(nnet_proto_file, 'w')
+  num_hid_layers = conf['num_hidden_layers']
+  num_hid_neurons = conf['hidden_units']
+  with_glorot = conf.get('with_glorot', True)
+  
+  #Use batch normalization for affine transform
+  batch_norm = conf.get('batch_norm', False)
+  
+  #Factor to rescale Normal distriburtion for initalizing weight matrices
+  param_stddev_factor = conf.get('param_stddev_factor', 0.1)
+
+  #Add softmax layer at the end
+  with_softmax = conf.get('with_softmax', True)
+
+  if batch_norm:
+    affine_layer = 'BatchNormalization'
+  else:
+    affine_layer = 'AffineTransform'
+
+  hid_bias_mean = conf.get('hid_bias_mean', -2.0)
+
+  #Set bias range for hidden activations (+/- 1/2 range around mean)
+  hid_bias_range = conf.get('hid_bias_range', 4.0)
+
+  nnet_proto.write("<NnetProto>\n")
+
+  for i in range(num_hid_layers):
+    layer_in_dim = feat_dim if (i == 0) else num_hid_neurons
+    layer_out_dim = num_hid_neurons
+    nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
+      (affine_layer, layer_in_dim, layer_out_dim, hid_bias_mean, hid_bias_range, \
+       (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
+    nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
+
+  nnet_proto.write("<Pooling> <InputDim> %d <OutputDim> %d\n" % (layer_out_dim, layer_out_dim))
+
+  embedding_layers = conf['embedding_layers']
+  embedding_layer_units = [ int(i) for i in embedding_layers.split(':') ]
+
+  for i in range(len(embedding_layer_units)):
+    layer_in_dim = layer_out_dim if (i == 0) else embedding_layer_units[i-1]
+    layer_out_dim = output_dim if (i == len(embedding_layer_units)) else embedding_layer_units[i]
+    nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
+      (affine_layer, layer_in_dim, layer_out_dim, hid_bias_mean, hid_bias_range, \
+       (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
+    nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], layer_out_dim, layer_out_dim))
+
+  # Last AffineTransform (10x smaller learning rate on bias)
+  nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
+    (affine_layer, layer_out_dim, output_dim, 0.0, 0.0, \
+     (param_stddev_factor * Glorot(layer_out_dim, output_dim, with_glorot))))
+
+  # Optionaly append softmax
+  if with_softmax:
+    nnet_proto.write("<Softmax> <InputDim> %d <OutputDim> %d\n" % (output_dim, output_dim))
+
+  nnet_proto.write("</NnetProto>\n")
+  nnet_proto.close()
+
+
 def make_nnet_proto(feat_dim, output_dim, conf, nnet_proto_file):
 
   nnet_proto = open(nnet_proto_file, 'w')
@@ -84,6 +145,7 @@ def make_nnet_proto(feat_dim, output_dim, conf, nnet_proto_file):
     affine_layer = 'BatchNormalization'
   else:
     affine_layer = 'AffineTransform'
+
   hid_bias_mean = conf.get('hid_bias_mean', -2.0)
 
   #Set bias range for hidden activations (+/- 1/2 range around mean)

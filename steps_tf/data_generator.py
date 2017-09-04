@@ -38,10 +38,14 @@ class DataGenerator:
     Popen(cmd, shell=True).communicate()
 
     # prepare feature pipeline
-    cmd = ['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
+    if conf.get('cmvn_type', 'utt') == 'utt':
+      cmd = ['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
                  'scp:' + self.data + '/cmvn.scp',
                  'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:-']
-    
+    else:
+      cmd = ['apply-cmvn-sliding', '--norm-vars=false', '--center=true', '--cmn-window=300', 
+              'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:-']
+                  
     if self.feat_type == 'delta':
       cmd.extend(['|', 'add-deltas', self.delta_opts, 'ark:-', 'ark:-'])
     elif self.feat_type in ['lda', 'fmllr']:
@@ -80,6 +84,11 @@ class DataGenerator:
       self.x = numpy.empty ((0, self.feat_dim))
       self.y = numpy.empty (0, dtype='int32')
     elif self.data_gen_type == 'utterance':
+      self.x = numpy.empty ((0, self.max_length, self.feat_dim))
+      self.y = numpy.empty ((0, self.max_length), dtype='int32')
+      self.seq_length = numpy.empty (0, dtype='int32')
+      self.mask = numpy.empty ((0, self.max_length), dtype='float32')
+    elif self.data_gen_type == 'seq2class':
       self.x = numpy.empty ((0, self.max_length, self.feat_dim))
       self.y = numpy.empty ((0, self.max_length), dtype='int32')
       self.seq_length = numpy.empty (0, dtype='int32')

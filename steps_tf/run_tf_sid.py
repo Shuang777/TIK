@@ -18,12 +18,17 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
-#get number of output labels
-def get_model_pdfs (gmm):
-  p1 = Popen (['hmm-info', '%s/final.mdl' % gmm], stdout = PIPE)
-  for line in p1.stdout.read().splitlines():
-    if 'pdfs' in str(line):
-      return int(line.split()[-1])
+def load_utt2spk(utt2spk_file):
+  spk2target = {}
+  utt2target = {}
+  with open(utt2spk_file) as f:
+    for line in f:
+      utt, spk = line.strip().split()
+      if spk not in spk2target:
+        spk2target[spk] = len(spk2target)
+      utt2target[utt] = spk2target[spk]
+  return utt2target, len(spk2target)
+
 
 def match_iter_model(directory, model_base):
   for file in os.listdir(directory):
@@ -33,21 +38,17 @@ def match_iter_model(directory, model_base):
 if __name__ != '__main__':
   raise ImportError ('This script can only be run, and can\'t be imported')
 
-if len(sys.argv) != 5:
+if len(sys.argv) != 4:
   raise TypeError ('USAGE: run_tf_sid.py config data_tr utt2spk dnn_dir')
 
 config_file  = sys.argv[1]
 data         = sys.argv[2]
-utt2spk_file = sys.argv[3]
-exp          = sys.argv[4]
+exp          = sys.argv[3]
 
 # prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
 os.path.isdir(exp+'/log') or os.makedirs (exp+'/log')
 os.path.isdir(exp+'/nnet') or os.makedirs (exp+'/nnet')
-
-# copy necessary files
-shutil.copyfile(gmm+'/final.mat', exp+'/final.mat')
 
 # read config file
 config = configparser.ConfigParser()
@@ -73,18 +74,18 @@ summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
 # separate data into 10% cv and 90% training
 Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
-# Generate pdf indices
-utt2spk, num_spks = load_utt2spk(utt2spk_file)
+# Generate target files
+utt2target, num_spks = load_utt2spk(data + '/utt2spk')
 
 # prepare training data generator
-data_gen_type = 'uttspk'
+data_gen_type = 'seq2class'
 
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
-tr_gen = DataGenerator (data_gen_type, exp+'/tr90', ali_labels, ali_dir, 
+tr_gen = DataGenerator (data_gen_type, exp+'/tr90', utt2target, None, 
                         exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
 
-cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir, 
+cv_gen = DataGenerator (data_gen_type, exp+'/cv10', utt2target, None,
                         exp, 'cv', feature_conf, num_gpus = num_gpus)
 
 atexit.register(tr_gen.clean)

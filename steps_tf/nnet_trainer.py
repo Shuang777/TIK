@@ -7,10 +7,11 @@ from subprocess import Popen,PIPE
 import nnet
 import math
 import logging
-from make_nnet_proto import make_nnet_proto, make_lstm_proto
+from make_nnet_proto import make_nnet_proto, make_lstm_proto, make_seq2class_proto
 from dnn import DNN
 from bn import BN
 from lstm import LSTM
+from seq2class import SEQ2CLASS
 
 logger = logging.getLogger('__main__')
 logger.setLevel(logging.INFO)
@@ -44,6 +45,8 @@ class NNTrainer(object):
       self.model = BN(input_dim, output_dim, batch_size, num_gpus)
     elif self.arch == 'lstm':
       self.model = LSTM(input_dim, output_dim, batch_size, max_length, num_gpus)
+    elif self.arch == 'seq2class':
+      self.model = SEQ2CLASS(input_dim, output_dim, batch_size, max_length, num_gpus)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
     
@@ -55,6 +58,9 @@ class NNTrainer(object):
     elif self.arch == 'lstm':
       make_lstm_proto(self.model.get_input_dim(), self.model.get_output_dim(), 
                       nnet_conf, nnet_proto_file)
+    elif self.arch == 'seq2class':
+      make_seq2class_proto(self.model.get_input_dim(), self.model.get_output_dim(),
+                           nnet_conf, nnet_proto_file)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
 
