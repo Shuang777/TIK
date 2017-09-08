@@ -277,8 +277,8 @@ class LSTM(object):
     return self.outputs
 
 
-  def prep_feed(self, x, y, seq_length, mask, 
-                learning_rate, keep_in_prob, keep_out_prob):
+  def prep_feed(self, data_gen, learning_rate, keep_in_prob, keep_out_prob):
+    x, y, seq_length, mask = data_gen.get_batch_utterances()
 
     feed_dict = { self.feats_holder: x,
                   self.labels_holder: y,
@@ -288,7 +288,7 @@ class LSTM(object):
                   self.keep_in_prob_holder: keep_in_prob,
                   self.keep_out_prob_holder: keep_out_prob}
 
-    return feed_dict
+    return feed_dict, x is not None
 
 
   def prep_forward_feed(self, x, seq_length, keep_in_prob, keep_out_prob):

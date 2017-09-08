@@ -231,12 +231,14 @@ class DNN(object):
     return self.train_op
 
 
-  def prep_feed(self, x, y, learning_rate):
+  def prep_feed(self, data_gen, learning_rate, keep_in_prob = None, keep_out_prob = None):
+    x, y = data_gen.get_batch_frames()
+
     feed_dict = { self.feats_holder: x,
                   self.labels_holder: y,
                   self.learning_rate_holder: learning_rate}
 
-    return feed_dict
+    return feed_dict, x is not None
 
   
   def prep_forward_feed(self, x):
