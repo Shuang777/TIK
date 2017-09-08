@@ -112,7 +112,7 @@ class NNTrainer(object):
           while(gpu_ids == "-1"):
             time.sleep(5)
             p1 = Popen (['pick-gpu', str(self.num_gpus)], stdout=PIPE)
-            gpu_ids = str(p1.stdout.read(), 'utf-8')
+            gpu_ids = str(p1.stdout.read())
         else:
           raise RuntimeError("Picking gpu failed")
       os.environ['CUDA_VISIBLE_DEVICES'] = gpu_ids

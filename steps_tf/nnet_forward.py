@@ -2,7 +2,7 @@ import os
 import sys
 import numpy as np
 import logging
-import kaldi_IO
+import kaldi_io
 import argparse
 from time import sleep
 from subprocess import Popen, PIPE
@@ -59,23 +59,19 @@ splice = feature_conf['context_width']
 # prepare feature pipeline
 feat_type = feature_conf.get('feat_type', 'raw')
 delta_opts = feature_conf.get('delta_opts', '')
-cmd = ['apply-cmvn', '--utt2spk=ark:' + args.data + '/utt2spk', 
-       'scp:' + args.data + '/cmvn.scp', 
-       'scp:' + args.data + '/feats.scp', 'ark:-']
+
+feats = 'ark:apply-cmvn --utt2spk=ark:' + args.data + '/utt2spk ' +
+        ' scp:' + args.data + '/cmvn.scp scp:' + args.data + '/feats.scp ark:- |'
     
 if feat_type == 'delta':
-  cmd.extend(['|', 'add-deltas', delta_opts, 'ark:-', 'ark:-'])
+  feats += ' add-deltas ' + delta_opts + ' ark:- ark:- |'
 elif feat_type in ['lda', 'fmllr']:
-  cmd.extend(['|', 'splice-feats', 'ark:-','ark:-'])
-  cmd.extend(['|', 'transform-feats', srcdir + '/final.mat', 'ark:-', 'ark:-'])
+  feats += ' splice-feats ark:- ark:- | transform-feats ' + srcdir + '/final.mat ark:- ark:- |'
 
 if feat_type == 'fmllr':
   assert os.path.exists(args.transform)
-  cmd.extend(['|', 'transform-feats','--utt2spk=ark:' + args.data + '/utt2spk',
-          'ark:%s' % args.transform, 'ark:-', 'ark:-'])
-
-#print(cmd)
-feat_pipe = Popen(' '.join(cmd), shell = True, stdout=PIPE)
+  feats += ' transform-feats --utt2spk=ark:' + args.data + '/utt2spk' + \
+           ' ark:' + args.transform + ' ark:- ark:- |'
 
 if args.apply_log and args.no_softmax:
   raise RuntimeError("Cannot use both --apply-log --no-softmax")
@@ -99,24 +95,16 @@ if args.prior_counts is not None:
   priors = prior_counts / prior_counts.sum()
   log_priors = np.log(priors)
 
-ark_in = feat_pipe.stdout
-ark_out = sys.stdout
-encoding = sys.stdout.encoding
-
 # here we are doing context window and feature normalization
-p1 = Popen(['splice-feats', '--print-args=false', '--left-context='+str(splice), 
-            '--right-context='+str(splice), 'ark:-', 'ark:-'], 
-            stdin = ark_in, stdout=PIPE, stderr=DEVNULL)
-p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', srcdir+'/cmvn.mat', 
-             'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
+feats += ' splice-feats --print-args=false --left-context='+str(splice) + \
+        ' --right-context='+str(splice) + ' ark:- ark:-|'
+feats += ' apply-cmvn --print-args=false --norm-vars=true ' + srcdir+'/cmvn.mat ark:- ark:- |'
 
 count = 0
-while True:
-  uid, feats = kaldi_IO.read_utterance(p2.stdout)
-  if uid == None:
-    # we are done
-    break
+reader = kaldi_io.SequentialBaseFloatMatrixReader(feats)
+writer = kaldi_io.BaseFloatMatrixWriter('ark:-')
 
+for uid, feats in reader:
   nnet_out = nnet.predict (feats, no_softmax = args.no_softmax)
   if args.apply_log:
     nnet_out = np.log(nnet_log)
@@ -125,12 +113,9 @@ while True:
     log_likes = nnet_out - log_priors
     nnet_out = log_likes
 
-  kaldi_IO.write_utterance(uid, nnet_out, ark_out, encoding)
-  #ark_out.flush()
+  writer.write(uid, nnet_out)
+  
   count += 1
   if args.verbose and count % 100 == 0:a
     logger.info("LOG (nnet_forward.py) %d utterances processed" % count)
-
-feat_pipe.stdout.close()
-p1.stdout.close()
 

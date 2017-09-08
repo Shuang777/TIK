@@ -1,6 +1,6 @@
 from subprocess import Popen, PIPE, check_output
 import tempfile
-import kaldi_IO
+import kaldi_io
 import pickle
 import shutil
 import numpy
@@ -123,26 +123,22 @@ class DataGenerator:
       feat_list: list of np matrix [num_frames, feat_dim]
       label_list: list of int32 np array [num_frames] 
     '''
-    p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), 
-                 '--right-context='+str(self.splice), 
-                 'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
-                 'ark:-'], stdout=PIPE, stderr=DEVNULL)
-    p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat', 
-                 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
+    feats = 'ark:splice-feats --print-args=false --left-context='+str(self.splice) + \
+            ' --right-context='+str(self.splice) + \
+            ' scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp ark:- |'
+    feats += ' apply-cmvn --print-args=false --norm-vars=true ' + \
+             self.exp+'/cmvn.mat ark:- ark:- |'
 
     feat_list = []
     label_list = []
-    while True:
-      uid, feat = kaldi_IO.read_utterance (p2.stdout)
-      if uid == None:
-        # no more utterance, return
-        return (feat_list, label_list)
+    
+    reader = kaldi_io.SequentialBaseFloatMatrixReader(feats)
+    for uid, feat in reader:
       if uid in self.labels:
         feat_list.append (feat)
         label_list.append (self.labels[uid])
-    # read done
 
-    p1.stdout.close()
+    return (feat_list, label_list)
 
           
   ## Retrive a mini batch
@@ -306,26 +302,23 @@ class DataGenerator:
       feat_list: list of np matrix [num_frames, feat_dim]
       label_list: list of int32 np array [num_frames] 
     '''
-    p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), 
-                 '--right-context='+str(self.splice), 
-                 'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
-                 'ark:-'], stdout=PIPE, stderr=DEVNULL)
-    p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat', 
-                 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
+    feats = 'ark:splice-feats --print-args=false --left-context='+str(self.splice) + \
+            ' --right-context='+str(self.splice) + \
+            ' scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp ark:- |'
+    feats += ' apply-cmvn --print-args=false --norm-vars=true ' + \
+             self.exp+'/cmvn.mat ark:- ark:- |'
 
     feat_list = []
     label_list = []
-    while True:
-      uid, feat = kaldi_IO.read_utterance (p2.stdout)
-      if uid == None:
-        # no more utterance, return
-        return (feat_list, label_list)
+    
+    reader = kaldi_io.SequentialBaseFloatMatrixReader(feats)
+    
+    for uid, feat in reader:
       if uid in self.labels:
         feat_list.append (feat)
         label_list.append (self.labels[uid])
-    # read done
 
-    p1.stdout.close()
+    return (feat_list, label_list)
 
 
   def get_sid_batch_utterances (self):
