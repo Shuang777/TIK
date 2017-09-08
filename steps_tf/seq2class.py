@@ -29,16 +29,14 @@ class SEQ2CLASS(object):
 
   def init_seq2class_single(self, graph, nnet_proto_file, seed):
     with graph.as_default():
-      feats_holder, seq_length_holder, \
-        mask_holder, labels_holder = nnet.placeholder_lstm(self.input_dim, 
+      feats_holder, mask_holder, labels_holder = nnet.placeholder_seq2class(self.input_dim, 
                                                            self.max_length,
                                                            self.batch_size)
       
-      keep_in_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_in_prob')
-      keep_out_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_out_prob')
+      keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
 
-      logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file, 
-                                   keep_in_prob_holder, keep_out_prob_holder)
+      logits, embeddings = nnet.inference_seq2class(feats_holder, mask_holder, nnet_proto_file, 
+                                        keep_prob_holder)
 
       outputs = tf.nn.softmax(logits)
 
@@ -46,18 +44,17 @@ class SEQ2CLASS(object):
       tf.add_to_collection('outputs', outputs)
       tf.add_to_collection('feats_holder', feats_holder)
       tf.add_to_collection('labels_holder', labels_holder)
-      tf.add_to_collection('seq_length_holder', seq_length_holder)
       tf.add_to_collection('mask_holder', mask_holder)
-      tf.add_to_collection('keep_in_prob_holder', keep_in_prob_holder)
-      tf.add_to_collection('keep_out_prob_holder', keep_out_prob_holder)
+      tf.add_to_collection('keep_prob_holder', keep_prob_holder)
+      for i in range(len(embeddings)):
+        tf.add_to_collection('embeddings', embeddings[i])
 
       self.feats_holder = feats_holder
       self.labels_holder = labels_holder
-      self.seq_length_holder = seq_length_holder
       self.mask_holder = mask_holder
-      self.keep_in_prob_holder = keep_in_prob_holder
-      self.keep_out_prob_holder = keep_out_prob_holder
+      self.keep_prob_holder = keep_prob_holder
       self.logits = logits
+      self.embeddings = embeddings
       self.outputs = outputs
       
       self.init_all_op = tf.global_variables_initializer()
@@ -131,21 +128,22 @@ class SEQ2CLASS(object):
 
   def read_from_file(self, graph, load_towers = False):
     if self.num_towers == 1:
-      self.read_lstm_single(graph)
+      self.read_seq2class_single(graph)
     else:
-      self.read_lstm_multi(graph, load_towers)
+      self.read_seq2class_multi(graph, load_towers)
 
 
-  def read_lstm_single(self, graph):
+  def read_seq2class_single(self, graph):
     ''' read graph from file '''
     self.feats_holder = graph.get_collection('feats_holder')[0]
     self.labels_holder = graph.get_collection('labels_holder')[0]
-    self.seq_length_holder = graph.get_collection('seq_length_holder')[0]
     self.mask_holder = graph.get_collection('mask_holder')[0]
-    self.keep_in_prob_holder = graph.get_collection('keep_in_prob_holder')[0]
-    self.keep_out_prob_holder = graph.get_collection('keep_out_prob_holder')[0]
+    self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
     self.logits = graph.get_collection('logits')[0]
     self.outputs = graph.get_collection('outputs')[0]
+    self.embeddings = []
+    for i in range(len(graph.get_collection('embeddings'))):
+      self.embeddings.append(graph.get_collection('embeddings')[i])
 
   
   def read_lstm_multi(self, graph, load_towers):
@@ -171,12 +169,12 @@ class SEQ2CLASS(object):
 
   def init_training(self, graph, optimizer_conf):
     if self.num_towers == 1:
-      self.init_training_lstm_single(graph, optimizer_conf)
+      self.init_training_seq2class_single(graph, optimizer_conf)
     else:
-      self.init_training_lstm_multi(graph, optimizer_conf)
+      self.init_training_seq2class_multi(graph, optimizer_conf)
 
 
-  def init_training_lstm_single(self, graph, optimizer_conf):
+  def init_training_seq2class_single(self, graph, optimizer_conf):
     ''' initialze training graph; 
     assumes self.logits, self.labels_holder in place'''
     with graph.as_default():
@@ -184,14 +182,13 @@ class SEQ2CLASS(object):
       # record variables we have already initialized
       variables_before = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
 
-      loss = nnet.loss_lstm(self.logits, self.labels_holder, self.mask_holder)
+      loss = nnet.loss_dnn(self.logits, self.labels_holder)
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
-      #train_op = nnet.training(optimizer_conf, loss, learning_rate_holder)
       opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
       grads = nnet.get_gradients(opt, loss)
       train_op = nnet.apply_gradients(optimizer_conf, opt, grads)
 
-      eval_acc = nnet.evaluation_lstm(self.logits, self.labels_holder, self.mask_holder)
+      eval_acc = nnet.evaluation_dnn(self.logits, self.labels_holder)
       
       variables_after = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
       new_variables = list(set(variables_after) - set(variables_before))
@@ -205,7 +202,7 @@ class SEQ2CLASS(object):
     self.init_train_op = init_train_op
 
  
-  def init_training_lstm_multi(self, graph, optimizer_conf):
+  def init_training_seq2class_multi(self, graph, optimizer_conf):
     tower_losses = []
     tower_grads = []
     tower_accs = []
@@ -277,25 +274,20 @@ class SEQ2CLASS(object):
     return self.outputs
 
 
-  def prep_feed(self, x, y, seq_length, mask, 
-                learning_rate, keep_in_prob, keep_out_prob):
+  def prep_feed(self, data_gen, learning_rate, keep_in_prob = None, keep_out_prob = None):
 
     feed_dict = { self.feats_holder: x,
                   self.labels_holder: y,
-                  self.seq_length_holder: seq_length,
                   self.mask_holder: mask,
-                  self.learning_rate_holder: learning_rate,
-                  self.keep_in_prob_holder: keep_in_prob,
-                  self.keep_out_prob_holder: keep_out_prob}
+                  self.learning_rate_holder: learning_rate}
 
-    return feed_dict
+    return feed_dict, x is not None
 
 
-  def prep_forward_feed(self, x, seq_length, keep_in_prob, keep_out_prob):
+  def prep_forward_feed(self, x, mask, keep_in_prob, keep_out_prob):
 
     feed_dict = { self.feats_holder: x,
-                  self.seq_length_holder: seq_length,
-                  self.keep_in_prob_holder: keep_in_prob,
-                  self.keep_out_prob_holder: keep_out_prob }
+                  self.mask_holder: mask,
+                  self.keep_prob_holder: keep_prob }
 
     return feed_dict

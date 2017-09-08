@@ -130,3 +130,25 @@ def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False
 
   layer_out = tf.concat(rnn_outs, 2)
   return layer_out
+
+
+def pooling(info, layer_in, mask):
+  '''
+  layer_in: 3-d np array of size [num_batch, max_length, hidden_dim]
+  mask: 2-d np array of size [num_batch, max_length]
+  '''
+  info_dict = info2dict(info)
+  mask_shape = mask.get_shape().as_list()
+  mask_reshape = tf.reshape(mask, [mask_shape[0], mask_shape[1], 1])
+  num_batch, max_length, dim_hid = layer_in.get_shape().as_list()
+  mask_tile = tf.tile(mask_reshape, [1, 1, dim_hid])
+  masked = tf.multiply(mask_tile, layer_in)
+  mean, var = tf.nn.moments(masked, [1])
+
+  mean_trans = tf.transpose(tf.scalar_mul(max_length, mean))
+  scales = tf.reduce_sum(mask, 1)
+  mean_scaled = tf.divide(mean_trans, scales)
+
+  layer_out = tf.transpose(mean_scaled)
+
+  return layer_out

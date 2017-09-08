@@ -31,6 +31,20 @@ def placeholder_lstm(input_dim, max_length, batch_size):
   return feats_holder, seq_length_holder, mask_holder, labels_holder
 
 
+def placeholder_seq2class(input_dim, max_length, batch_size):
+  '''
+  outputs:
+    feats_holder, labels_holder, mask_holder
+  '''
+  feats_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length, input_dim), name='feature')
+
+  labels_holder = tf.placeholder(tf.int32, shape=(batch_size), name='target')
+
+  mask_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length), name='mask')
+
+  return feats_holder, mask_holder, labels_holder
+
+
 def inference_dnn(feats_holder, nnet_proto_file, reuse = False):
   '''
   args:
@@ -129,8 +143,58 @@ def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file,
   return logits
 
 
-def build_layer(line, layer_in, seq_length = None, keep_in_prob = None, 
-                keep_out_prob = None, reuse = False):
+def inference_seq2class(feats_holder, mask_holder, nnet_proto_file, 
+                        keep_prob_holder, reuse = False):
+  '''
+  args:
+    feats_holder: np 3-d array of size [num_batch, max_length, feat_dim]
+    seq_length_holder: np array of size [num_batch]
+  outputs: 
+    logits: np 2-d array of size [num_batch, num_targets]
+    embeddings: list of np 2-d array of size [num_batch, num_embedding dims]
+  '''
+  
+  nnet_proto = open(nnet_proto_file, 'r')
+  line = nnet_proto.readline().strip()
+  assert line == '<NnetProto>'
+  layer_in = feats_holder
+  count_layer = 1
+
+  # before_pooling
+  for line in nnet_proto:
+    line = line.strip()
+    if line.startswith('<Pooling>'):
+      break
+    with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+      layer_out = build_layer(line, layer_in)
+      layer_in = layer_out
+      count_layer += 1
+
+  # pooling layer
+  with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+    layer_out = build_layer(line, layer_in, mask_holder = mask_holder)
+    layer_in = layer_out
+    count_layer += 1
+
+  # after pooling
+  embeddings = []
+  for line in nnet_proto:
+    line = line.strip()
+    if line == '</NnetProto>':
+      break
+    with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+      layer_out = build_layer(line, layer_in)
+      layer_in = layer_out
+      count_layer += 1
+      if line.startswith('<Sigmoid>') or line.startswith('Relu'):
+        embeddings.append(layer_out)
+
+  logits = layer_out
+  return logits, embeddings
+
+
+def build_layer(line, layer_in, seq_length = None, mask_holder = None,
+                keep_in_prob = None, keep_out_prob = None, reuse = False):
   layer_type, info = line.split(' ', 1)
   if layer_type == '<AffineTransform>':
     layer_out = layer.affine_transform(info, layer_in)
@@ -152,12 +216,18 @@ def build_layer(line, layer_in, seq_length = None, keep_in_prob = None,
     layer_out = layer.lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = reuse)
   elif layer_type == '<BLSTM>':
     layer_out = layer.blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = reuse)
+  elif layer_type == '<Pooling>':
+    layer_out = layer.pooling(info, layer_in, mask_holder)
 
   return layer_out
 
 
 def loss_dnn(logits, labels):
-
+  '''
+  args:
+    logis: tf tensor of size [batch_size, num_targets]
+    labels: tf tensor of size [batch_size]
+  '''
   labels = tf.to_int64(labels)
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits=logits, labels=labels, name='xentropy')
