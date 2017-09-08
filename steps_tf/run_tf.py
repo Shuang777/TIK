@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import os
 import sys
 import re
@@ -74,14 +72,15 @@ else:
 config.read(config_file)
 
 # parse config sections
+general_conf = section_config.parse(config.items('general'))
 nnet_conf = section_config.parse(config.items('nnet'))
 nnet_train_conf = section_config.parse(config.items('nnet-train'))
 optimizer_conf = section_config.parse(config.items('optimizer'))
 scheduler_conf = section_config.parse(config.items('scheduler'))
 feature_conf = section_config.parse(config.items('feature'))
 
-nnet_proto_file = config.get('general', 'nnet_proto', fallback = None)
-summary_dir = config.get('general', 'summary_dir', fallback = None)
+nnet_proto_file = general_conf.get('nnet_proto', None)
+summary_dir = general_conf.get('summary_dir', None)
 summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
 
 # separate data into 10% cv and 90% training

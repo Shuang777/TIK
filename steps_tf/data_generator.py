@@ -1,4 +1,4 @@
-from subprocess import Popen, PIPE, DEVNULL, check_output
+from subprocess import Popen, PIPE, check_output
 import tempfile
 import kaldi_IO
 import pickle
@@ -6,6 +6,8 @@ import shutil
 import numpy
 import os
 import math
+
+DEVNULL = open(os.devnull, 'w')
 
 class DataGenerator:
   def __init__ (self, data_gen_type, data, labels, 
@@ -67,7 +69,7 @@ class DataGenerator:
       Popen(['compute-cmvn-stats', 'ark:-', exp+'/cmvn.mat'], stdin=p1.stdout).communicate()
       p1.stdout.close()
 
-    self.num_split = math.ceil(self.num_utts / self.max_split_data_size)  # integer division
+    self.num_split = int(math.ceil(1.0 * self.num_utts / self.max_split_data_size))
     for i in range(self.num_split):
       split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
       split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.temp_dir, self.name, i)
@@ -297,24 +299,96 @@ class DataGenerator:
     return x_mini, y_mini, seq_mini, mask_mini
 
 
+  ## Return a batch to work on
+  def get_next_sid_split_data (self):
+    '''
+    output: 
+      feat_list: list of np matrix [num_frames, feat_dim]
+      label_list: list of int32 np array [num_frames] 
+    '''
+    p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice), 
+                 '--right-context='+str(self.splice), 
+                 'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
+                 'ark:-'], stdout=PIPE, stderr=DEVNULL)
+    p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat', 
+                 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
+
+    feat_list = []
+    label_list = []
+    while True:
+      uid, feat = kaldi_IO.read_utterance (p2.stdout)
+      if uid == None:
+        # no more utterance, return
+        return (feat_list, label_list)
+      if uid in self.labels:
+        feat_list.append (feat)
+        label_list.append (self.labels[uid])
+    # read done
+
+    p1.stdout.close()
+
+
+  def get_sid_batch_utterances (self):
+    '''
+    output:
+      x_mini: np matrix [batch_size, max_length, feat_dim]
+      y_mini: np array [num_frames]
+      mask: np matrix [batch_size, max_length]
+    '''
+    # read split data until we have enough for this batch
+    while (self.batch_pointer + self.batch_size >= len (self.x)):
+      if not self.loop and self.split_data_counter == self.num_split:
+        # not loop mode and we arrive the end, do not read anymore
+        return None, None, None, None
+
+      x, vad, y = self.get_next_sid_split_data()
+      x_pad, y_pad, mask = self.pack_sid_utt_data(x, vad, y)
+
+      self.x = numpy.concatenate ((self.x[self.batch_pointer:], x_pad))
+      self.y = numpy.append (self.y[self.batch_pointer:], numpy.hstack(y))
+      self.mask = numpy.concatenate ((self.mask[self.batch_pointer:], mask))
+      
+      self.batch_pointer = 0
+
+      ## Shuffle data, utterance base
+      randomInd = numpy.array(range(len(self.x)))
+      numpy.random.shuffle(randomInd)
+      self.x = self.x[randomInd]
+      self.y = self.y[randomInd]
+      self.mask = self.mask[randomInd]
+
+      self.split_data_counter += 1
+      if self.loop and self.split_data_counter == self.num_split:
+        self.split_data_counter = 0
+    
+    x_mini = self.x[self.batch_pointer:self.batch_pointer+self.batch_size]
+    y_mini = self.y[self.batch_pointer:self.batch_pointer+self.batch_size]
+    mask_mini = self.mask[self.batch_pointer:self.batch_pointer+self.batch_size]
+
+    self.batch_pointer += self.batch_size
+    self.last_batch_frames = mask_mini.sum()
+
+    return x_mini, y_mini, seq_mini, mask_mini
+
+
   def get_batch_size(self):
-      return self.batch_size
+    return self.batch_size
 
 
   def get_last_batch_frames(self):
-      return self.last_batch_frames
+    return self.last_batch_frames
 
 
   def reset_batch(self):
-      self.split_data_counter = 0
+    self.split_data_counter = 0
 
 
   def save_target_counts(self, num_targets, output_file):
-      # here I'm assuming training data is less than 10,000 hours
-      counts = numpy.zeros(num_targets, dtype='int64')
-      for alignment in self.labels.values():
-        counts += numpy.bincount(alignment, minlength = num_targets)
-      # add a ``half-frame'' to all the elements to avoid zero-counts (decoding issue)
-      counts = counts.astype(float) + 0.5
-      numpy.savetxt(output_file, counts, fmt = '%.1f')
+    # here I'm assuming training data is less than 10,000 hours
+    counts = numpy.zeros(num_targets, dtype='int64')
+    for alignment in self.labels.values():
+      counts += numpy.bincount(alignment, minlength = num_targets)
+    # add a ``half-frame'' to all the elements to avoid zero-counts (decoding issue)
+    counts = counts.astype(float) + 0.5
+    numpy.savetxt(output_file, counts, fmt = '%.1f')
 

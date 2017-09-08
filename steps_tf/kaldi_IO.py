@@ -15,16 +15,16 @@ def read_utterance (ark):
     m, rows = struct.unpack('<bi', ark.read(5))
     n, cols = struct.unpack('<bi', ark.read(5))
     feat = numpy.frombuffer(ark.read(rows * cols * 4), dtype=numpy.float32)
-    return uid.decode(), feat.reshape((rows,cols))
+    return uid, feat.reshape((rows,cols))
 
 
 def write_utterance (uid, feat, ark, encoding):
     feat = numpy.asarray (feat, dtype=numpy.float32)
     m,n = feat.shape
     ## Write header
-    ark.write (struct.pack('<%ds'%(len(uid)),uid.encode(encoding)))
-    ark.write (struct.pack('<cxcccc',' '.encode(encoding),'B'.encode(encoding),
-                'F'.encode(encoding),'M'.encode(encoding),' '.encode(encoding)))
+    ark.write (struct.pack('<%ds'%(len(uid)), uid))
+    ark.write (struct.pack('<cxcccc',' ','B',
+                'F','M',' '))
     ark.write (struct.pack('<bi', 4, m))
     ark.write (struct.pack('<bi', 4, n))
     ## Write feature matrix

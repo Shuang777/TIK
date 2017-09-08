@@ -105,7 +105,7 @@ class NNTrainer(object):
   def set_gpu(self):
     if self.use_gpu and self.num_gpus != 0:
       p1 = Popen (['pick-gpu', str(self.num_gpus)], stdout=PIPE)
-      gpu_ids = str(p1.stdout.read(), 'utf-8')
+      gpu_ids = str(p1.stdout.read())
       if gpu_ids == "-1":
         if self.wait_gpu:
           logger.info("Waiting for gpus")
@@ -143,31 +143,6 @@ class NNTrainer(object):
     self.sess.run(self.model.get_init_train_op())
 
  
-  def prepare_feed(self, train_gen, learning_rate, keep_in_prob, keep_out_prob):
-    if self.arch in ['dnn', 'bn']:
-      feed_dict, has_data = self.prepare_feed_dnn(train_gen, learning_rate)
-    elif self.arch == 'lstm':
-      feed_dict, has_data = self.prepare_feed_lstm(train_gen, learning_rate,
-                                                   keep_in_prob, keep_out_prob)
-    return feed_dict, has_data
-
-
-  def prepare_feed_dnn(self, train_gen, learning_rate):
-    x, y = train_gen.get_batch_frames()
-    feed_dict = self.model.prep_feed(x, y, learning_rate)
-
-    return feed_dict, x is not None
-
-
-  def prepare_feed_lstm(self, train_gen, learning_rate, keep_in_prob, keep_out_prob):
-    x, y, seq_length, mask = train_gen.get_batch_utterances()
-
-    feed_dict = self.model.prep_feed(x, y, seq_length, mask, 
-                                     learning_rate, keep_in_prob, keep_out_prob)
-
-    return feed_dict, x is not None
-    
-
   def iter_data(self, logfile, train_gen, learning_rate = None, keep_acc = False, 
                 keep_in_prob = 1.0, keep_out_prob = 1.0):
     '''Train/test one iteration; use learning_rate == None to specify test mode'''
@@ -188,7 +163,9 @@ class NNTrainer(object):
 
     while(True):
 
-      feed_dict, has_data = self.prepare_feed(train_gen, learning_rate, keep_in_prob, keep_out_prob)
+      feed_dict, has_data = self.model.prep_feed(train_gen, learning_rate,
+                                                 keep_in_prob = keep_in_prob,
+                                                 keep_out_prob = keep_out_prob)
 
       if not has_data:   # no more data for training
         break
@@ -313,7 +290,8 @@ class NNTrainer(object):
       posts: np 2-d array of size[num_frames, num_targets]
     '''
     posts = []
-    for i in range(math.ceil(len(feats) / self.batch_size)):
+    num_batches = int(math.ceil(1.0 * len(feats) / self.batch_size))
+    for i in range(num_batches):
       batch_start = i*self.batch_size
       batch_end = (i+1)*self.batch_size
       # we avoid copying feats, only patch the last batch
@@ -343,7 +321,8 @@ class NNTrainer(object):
       posts: np 2-d array of size[num_frames, num_targets]
     '''
     bn_outs = []
-    for i in range(math.ceil(len(feats) / self.batch_size)):
+    num_batches = int(math.ceil(1.0 * len(feats) / self.batch_size))
+    for i in range(num_batches):
       batch_start = i*self.batch_size
       batch_end = (i+1)*self.batch_size
       # we avoid copying feats, only patch the last batch
@@ -375,7 +354,8 @@ class NNTrainer(object):
 
     posts = []
     assert len(feats_packed) % self.batch_size == 0
-    for i in range(len(feats_packed) // self.batch_size):
+    num_batches = int(math.ceil(1.0 * len(feats_packed) / self.batch_size))
+    for i in range(num_batches):
       batch_start = i*self.batch_size
       batch_end = (i+1)*self.batch_size
       feats_batch = feats_packed[batch_start:batch_end, :]

@@ -21,7 +21,8 @@ def parse(config_tuple):
     elif i in ['batch_norm', 'with_softmax', 'use_peepholes', 'clip_gradients']:
       config_parsed[i] = str2boolean(config_dict[i])
     elif i in ['nonlin', 'op_type', 'nnet_arch', 'lstm_type', 'feat_type', 
-               'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers']:
+               'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers', 
+               'nnet_proto', 'summary_dir']:
       config_parsed[i] = config_dict[i]
     else:
       raise RuntimeError('section_config.parse: config field %s not supported' % i)

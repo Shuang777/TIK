@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import os
 import sys
 import numpy as np
@@ -7,11 +5,12 @@ import logging
 import kaldi_IO
 import argparse
 from time import sleep
-from subprocess import Popen, PIPE, DEVNULL
+from subprocess import Popen, PIPE
 from six.moves import configparser
 from nnet_trainer import NNTrainer
 import section_config
 
+DEVNULL = open(os.devnull, 'w')
 
 def read_int_or_none(file_name):
   if os.path.isfile(file_name):
@@ -101,7 +100,7 @@ if args.prior_counts is not None:
   log_priors = np.log(priors)
 
 ark_in = feat_pipe.stdout
-ark_out = sys.stdout.buffer
+ark_out = sys.stdout
 encoding = sys.stdout.encoding
 
 # here we are doing context window and feature normalization
@@ -127,11 +126,11 @@ while True:
     nnet_out = log_likes
 
   kaldi_IO.write_utterance(uid, nnet_out, ark_out, encoding)
+  #ark_out.flush()
   count += 1
-  if args.verbose and count % 100 == 0:
-    logger.info("%d utterances processed" % count)
+  if args.verbose and count % 100 == 0:a
+    logger.info("LOG (nnet_forward.py) %d utterances processed" % count)
 
 feat_pipe.stdout.close()
 p1.stdout.close()
-
 

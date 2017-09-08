@@ -71,29 +71,31 @@ if [ ! -z $transform_dir ]; then
   fi
 fi
 
-
-# Finally add feature_transform and the MLP
-feats="ark:python3 steps_tf/nnet_forward.py --prior-counts $srcdir/ali_train_pdf.counts --transform $transform_dir/$trans $sdata/JOB $srcdir/$model_name |"
-
-echo "$0: aligning data '$data' using nnet/model '$srcdir', putting alignments in '$dir'"
 # Map oovs in reference transcription 
 tra="ark:utils/sym2int.pl --map-oov $oov -f 2- $lang/words.txt $sdata/JOB/text|";
+graphs="ark:compile-train-graphs $dir/tree $dir/final.mdl $lang/L.fst \"$tra\" ark:- |"
+
+echo "$0: aligning data '$data' using nnet/model '$srcdir', putting alignments in '$dir'"
 # We could just use align-mapped in the next line, but it's less efficient as it compiles the
 # training graphs one by one.
 if [ $stage -le 0 ]; then
   $cmd JOB=1:$nj $dir/log/align.JOB.log \
-    compile-train-graphs $dir/tree $dir/final.mdl $lang/L.fst "$tra" ark:- \| \
-    align-compiled-mapped $scale_opts --beam=$beam --retry-beam=$retry_beam $dir/final.mdl ark:- \
-      "$feats" "ark:|gzip -c >$dir/ali.JOB.gz"
+    python steps_tf/nnet_forward.py --no-softmax --prior-counts $srcdir/ali_train_pdf.counts \
+    --transform $transform_dir/$trans --verbose $sdata/JOB $srcdir/$model_name \| \
+    align-compiled-mapped $scale_opts --beam=$beam --retry-beam=$retry_beam $dir/final.mdl \
+    "$graphs" ark:- "ark:|gzip -c >$dir/ali.JOB.gz"
 fi
+
+graphs="compile-train-graphs $lat_graph_scale $dir/tree $dir/final.mdl $lang/L.fst \"$tra\" ark:- |"
 
 # Optionally align to lattice format (handy to get word alignment)
 if [ "$align_to_lats" == "true" ]; then
   echo "$0: aligning also to lattices '$dir/lat.*.gz'"
   $cmd JOB=1:$nj $dir/log/align_lat.JOB.log \
-    compile-train-graphs $lat_graph_scale $dir/tree $dir/final.mdl  $lang/L.fst "$tra" ark:- \| \
-    latgen-faster-mapped $lat_decode_opts --word-symbol-table=$lang/words.txt $dir/final.mdl ark:- \
-      "$feats" "ark:|gzip -c >$dir/lat.JOB.gz"
+    python steps_tf/nnet_forward.py --no-softmax --prior-counts $srcdir/ali_train_pdf.counts \
+    --transform $transform_dir/$trans $sdata/JOB $srcdir/$model_name \| \
+    latgen-faster-mapped $lat_decode_opts --word-symbol-table=$lang/words.txt $dir/final.mdl \
+    "$graphs" ark:- "ark:|gzip -c >$dir/lat.JOB.gz"
 fi
 
 echo "$0: done aligning data."
