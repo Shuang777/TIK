@@ -34,7 +34,7 @@ def get_alignments(exp, ali_dir):
   ali_labels = {}
   for line in p1.stdout:
     line = line.split()
-    utt = line[0].decode(sys.stdout.encoding)
+    utt = line[0]
     ali_labels[utt] = [int(i) for i in line[1:]]
   return ali_labels
 

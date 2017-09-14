@@ -183,8 +183,8 @@ class NNTrainer(object):
 
       if keep_acc or count_steps % 1000 == 0 or count_steps == 1:
         acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
-        sum_accs += acc
-        sum_acc_frames += train_gen.get_last_batch_frames()
+        sum_accs += 1.0 * acc
+        sum_acc_frames += 1.0 * train_gen.get_last_batch_frames()
 
         # Print status to stdout.
         if count_steps % 1000 == 0:

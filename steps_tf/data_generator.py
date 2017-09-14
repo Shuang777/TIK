@@ -1,6 +1,7 @@
 from subprocess import Popen, PIPE, check_output
 import tempfile
 import kaldi_io
+import kaldi_IO
 import pickle
 import shutil
 import numpy
@@ -43,39 +44,36 @@ class DataGenerator:
     if conf.get('cmvn_type', 'utt') == 'utt':
       cmd = ['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
                  'scp:' + self.data + '/cmvn.scp',
-                 'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:-']
+                 'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
     else:
       cmd = ['apply-cmvn-sliding', '--norm-vars=false', '--center=true', '--cmn-window=300', 
-              'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:-']
+              'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
                   
     if self.feat_type == 'delta':
-      cmd.extend(['|', 'add-deltas', self.delta_opts, 'ark:-', 'ark:-'])
+      cmd.extend(['add-deltas', self.delta_opts, 'ark:-', 'ark:- |'])
     elif self.feat_type in ['lda', 'fmllr']:
-      cmd.extend(['|', 'splice-feats', 'ark:-','ark:-'])
-      cmd.extend(['|', 'transform-feats', exp+'/final.mat', 'ark:-', 'ark:-'])
+      cmd.extend(['splice-feats', 'ark:-','ark:- |'])
+      cmd.extend(['transform-feats', exp+'/final.mat', 'ark:-', 'ark:- |'])
 
     if self.feat_type == 'fmllr':
       assert os.path.exists(trans_dir+'/trans.1') 
-      cmd.extend(['|', 'transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
-              '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-'])
+      cmd.extend(['transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
+              '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-|'])
     
-    cmd.extend(['|', 'copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
+    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
     Popen(' '.join(cmd), shell=True).communicate()
 
     if name == 'train':
-      p1 = Popen (['splice-feats', '--left-context='+str(self.splice), '--right-context='+str(self.splice),
-                   'scp:head -10000 %s/%s.scp |' % (exp, self.name), 'ark:-'], 
-                   stdout=PIPE)
-      Popen(['compute-cmvn-stats', 'ark:-', exp+'/cmvn.mat'], stdin=p1.stdout).communicate()
-      p1.stdout.close()
+      cmd =['splice-feats', '--left-context='+str(self.splice), '--right-context='+str(self.splice),
+            '\'scp:head -10000 %s/%s.scp |\'' % (exp, self.name), 'ark:- |', 'compute-cmvn-stats', 
+            'ark:-', exp+'/cmvn.mat']
+      Popen(' '.join(cmd), shell=True).communicate()
 
     self.num_split = int(math.ceil(1.0 * self.num_utts / self.max_split_data_size))
     for i in range(self.num_split):
       split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
       split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.temp_dir, self.name, i)
-      Popen(split_scp_cmd, shell=True).communicate()
-    
-    Popen (split_scp_cmd, shell=True).communicate()
+      Popen (split_scp_cmd, shell=True).communicate()
     
     numpy.random.seed(seed)
 
@@ -123,21 +121,26 @@ class DataGenerator:
       feat_list: list of np matrix [num_frames, feat_dim]
       label_list: list of int32 np array [num_frames] 
     '''
-    feats = 'ark:splice-feats --print-args=false --left-context='+str(self.splice) + \
-            ' --right-context='+str(self.splice) + \
-            ' scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp ark:- |'
-    feats += ' apply-cmvn --print-args=false --norm-vars=true ' + \
-             self.exp+'/cmvn.mat ark:- ark:- |'
+
+    p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice),
+                 '--right-context='+str(self.splice), 
+                 'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
+                 'ark:-'], stdout=PIPE, stderr=DEVNULL)
+    p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat',
+                 'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
 
     feat_list = []
     label_list = []
     
-    reader = kaldi_io.SequentialBaseFloatMatrixReader(feats)
-    for uid, feat in reader:
+    while True:
+      uid, feat = kaldi_IO.read_utterance (p2.stdout)
+      if uid == None:
+        break;
       if uid in self.labels:
         feat_list.append (feat)
         label_list.append (self.labels[uid])
 
+    p1.stdout.close()
     return (feat_list, label_list)
 
           
@@ -310,8 +313,6 @@ class DataGenerator:
 
     feat_list = []
     label_list = []
-    
-    reader = kaldi_io.SequentialBaseFloatMatrixReader(feats)
     
     for uid, feat in reader:
       if uid in self.labels:
