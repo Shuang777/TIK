@@ -9,7 +9,7 @@ import atexit
 from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import NNTrainer
-from data_generator import DataGenerator
+from data_generator import FrameDataGenerator, UttDataGenerator
 import section_config   # my own config parser after configparser
 
 logger = logging.getLogger(__name__)
@@ -89,21 +89,24 @@ Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/t
 # Generate pdf indices
 ali_labels = get_alignments(exp, ali_dir)
 
-# prepare training data generator
-if nnet_conf['nnet_arch'] == 'lstm':
-  data_gen_type = 'utterance'
-elif nnet_conf['nnet_arch'] in ['dnn', 'bn']:
-  data_gen_type = 'frame'
-else:
-  raise RuntimeError("nnet_arch %s not supported yet", nnet_conf['nnet_arch'])
-
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
-tr_gen = DataGenerator (data_gen_type, exp+'/tr90', ali_labels, ali_dir, 
-                        exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
+# prepare training data generator
+if nnet_conf['nnet_arch'] == 'lstm':
+  tr_gen = UttDataGenerator (exp+'/tr90', ali_labels, ali_dir, 
+                          exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
 
-cv_gen = DataGenerator (data_gen_type, exp+'/cv10', ali_labels, ali_dir, 
-                        exp, 'cv', feature_conf, num_gpus = num_gpus)
+  cv_gen = UttDataGenerator (exp+'/cv10', ali_labels, ali_dir, 
+                          exp, 'cv', feature_conf, num_gpus = num_gpus)
+elif nnet_conf['nnet_arch'] in ['dnn', 'bn']:
+  tr_gen = FrameDataGenerator (exp+'/tr90', ali_labels, ali_dir, 
+                          exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
+
+  cv_gen = FrameDataGenerator (exp+'/cv10', ali_labels, ali_dir, 
+                          exp, 'cv', feature_conf, num_gpus = num_gpus)
+
+else:
+  raise RuntimeError("nnet_arch %s not supported yet", nnet_conf['nnet_arch'])
 
 atexit.register(tr_gen.clean)
 atexit.register(cv_gen.clean)

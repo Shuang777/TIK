@@ -11,7 +11,7 @@ import atexit
 from six.moves import configparser
 from subprocess import Popen, PIPE
 from nnet_trainer import NNTrainer
-from data_generator import DataGenerator
+from data_generator import SeqDataGenerator
 import section_config   # my own config parser after configparser
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,6 @@ def load_utt2spk(utt2spk_file):
         spk2target[spk] = len(spk2target)
       utt2target[utt] = spk2target[spk]
   return utt2target, len(spk2target)
-
 
 def match_iter_model(directory, model_base):
   for file in os.listdir(directory):
@@ -61,14 +60,15 @@ else:
 config.read(config_file)
 
 # parse config sections
+general_conf = section_config.parse(config.items('general'))
 nnet_conf = section_config.parse(config.items('nnet'))
 nnet_train_conf = section_config.parse(config.items('nnet-train'))
 optimizer_conf = section_config.parse(config.items('optimizer'))
 scheduler_conf = section_config.parse(config.items('scheduler'))
 feature_conf = section_config.parse(config.items('feature'))
 
-nnet_proto_file = config.get('general', 'nnet_proto', fallback = None)
-summary_dir = config.get('general', 'summary_dir', fallback = None)
+nnet_proto_file = general_conf.get('nnet_proto', None)
+summary_dir = general_conf.get('summary_dir', None)
 summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
 
 # separate data into 10% cv and 90% training
@@ -77,15 +77,12 @@ Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', data, exp+'/t
 # Generate target files
 utt2target, num_spks = load_utt2spk(data + '/utt2spk')
 
-# prepare training data generator
-data_gen_type = 'seq2class'
-
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
-tr_gen = DataGenerator (data_gen_type, exp+'/tr90', utt2target, None, 
+tr_gen = SeqDataGenerator (exp+'/tr90', utt2target, None, 
                         exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
 
-cv_gen = DataGenerator (data_gen_type, exp+'/cv10', utt2target, None,
+cv_gen = SeqDataGenerator (exp+'/cv10', utt2target, None,
                         exp, 'cv', feature_conf, num_gpus = num_gpus)
 
 atexit.register(tr_gen.clean)

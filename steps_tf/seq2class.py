@@ -276,6 +276,8 @@ class SEQ2CLASS(object):
 
   def prep_feed(self, data_gen, learning_rate, keep_in_prob = None, keep_out_prob = None):
 
+    x, y, mask = data_gen.get_batch_utterances()
+
     feed_dict = { self.feats_holder: x,
                   self.labels_holder: y,
                   self.mask_holder: mask,

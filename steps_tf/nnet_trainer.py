@@ -156,8 +156,8 @@ class NNTrainer(object):
     sum_accs = 0
     count_steps = 0
 
-    sum_frames = 0
-    sum_acc_frames = 0
+    sum_counts = 0        # counts could be frames or utterances
+    sum_acc_counts = 0
 
     start_time = time.time()
 
@@ -175,38 +175,38 @@ class NNTrainer(object):
       else:
         _, loss = self.sess.run([self.model.get_train_op(), self.model.get_loss()], feed_dict = feed_dict)
 
-      batch_frames = train_gen.get_last_batch_frames()
+      batch_counts = train_gen.get_last_batch_counts()
       sum_avg_loss += loss
-      sum_frames += batch_frames
+      sum_counts += batch_counts
       duration = time.time() - start_time
       count_steps += 1
 
       if keep_acc or count_steps % 1000 == 0 or count_steps == 1:
         acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
         sum_accs += 1.0 * acc
-        sum_acc_frames += 1.0 * train_gen.get_last_batch_frames()
+        sum_acc_counts += 1.0 * train_gen.get_last_batch_counts()
 
         # Print status to stdout.
         if count_steps % 1000 == 0:
-          iter_logger.info("Step %5d: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %.2f%%", 
+          iter_logger.info("Step %5d: avg loss = %.6f on %d %s (%.2f sec passed, %.2f %s per sec), peek acc: %.2f%%", 
                     count_steps, sum_avg_loss / (count_steps*self.num_gpus), 
-                    sum_frames, duration, sum_frames / duration, 
-                    100.0*acc/train_gen.get_last_batch_frames())
+                    sum_counts, train_gen.count_units(), duration, sum_counts / duration, 
+                    train_gen.count_units(), 100.0*acc/train_gen.get_last_batch_counts())
 
     # reset batch_generator because it might be used again
     train_gen.reset_batch()
 
     avg_loss = sum_avg_loss / (count_steps * self.num_gpus)
-    if sum_acc_frames == 0:
+    if sum_acc_counts == 0:
       avg_acc = None
       avg_acc_str = str(avg_acc)
     else:
-      avg_acc = sum_accs/sum_acc_frames
+      avg_acc = sum_accs/sum_acc_counts
       avg_acc_str = "%.2f%%" % (100.0*avg_acc)
 
-    iter_logger.info("Complete: avg loss = %.6f on %d frames (%.2f sec passed, %.2f frames per sec), peek acc: %s", 
-                avg_loss, sum_frames, duration, 
-                sum_frames / duration, avg_acc_str)
+    iter_logger.info("Complete: avg loss = %.6f on %d %s (%.2f sec passed, %.2f %s per sec), peek acc: %s", 
+                avg_loss, sum_counts, train_gen.count_units(), duration, 
+                sum_counts / duration, train_gen.count_units(), avg_acc_str)
 
     iter_logger.removeHandler(fh)
 
