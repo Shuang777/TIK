@@ -72,7 +72,7 @@ summary_dir = general_conf.get('summary_dir', None)
 summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
 
 # separate data into 10% cv and 90% training
-Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
+Popen(['myutils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
 # Generate target files
 utt2target, num_spks = load_utt2spk(data + '/utt2spk')
