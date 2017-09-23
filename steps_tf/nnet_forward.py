@@ -60,7 +60,7 @@ splice = feature_conf['context_width']
 feat_type = feature_conf.get('feat_type', 'raw')
 delta_opts = feature_conf.get('delta_opts', '')
 
-feats = 'ark:apply-cmvn --utt2spk=ark:' + args.data + '/utt2spk ' +
+feats = 'ark:apply-cmvn --utt2spk=ark:' + args.data + '/utt2spk ' + \
         ' scp:' + args.data + '/cmvn.scp scp:' + args.data + '/feats.scp ark:- |'
     
 if feat_type == 'delta':
@@ -116,6 +116,6 @@ for uid, feats in reader:
   writer.write(uid, nnet_out)
   
   count += 1
-  if args.verbose and count % 100 == 0:a
+  if args.verbose and count % 100 == 0:
     logger.info("LOG (nnet_forward.py) %d utterances processed" % count)
 

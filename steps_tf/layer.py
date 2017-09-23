@@ -147,8 +147,14 @@ def pooling(info, layer_in, mask):
 
   mean_trans = tf.transpose(tf.scalar_mul(max_length, mean))
   scales = tf.reduce_sum(mask, 1)
-  mean_scaled = tf.divide(mean_trans, scales)
+  stats = tf.divide(mean_trans, scales)
 
-  layer_out = tf.transpose(mean_scaled)
+  use_std = info_dict.get('<UseStd>', 'True').lower() == 'true'
+  if use_std:
+    var_trans = tf.transpose(tf.scalar_mul(max_length, var))
+    var_scaled = tf.divide(var_trans, scales)
+    stats = tf.concat([stats, var_scaled], 0)
+
+  layer_out = tf.transpose(stats)
 
   return layer_out

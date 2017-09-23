@@ -494,6 +494,8 @@ class SeqDataGenerator:
       cmd.extend(['splice-feats', '--left-context='+str(self.splice), 
                   '--right-context='+str(self.splice), 'ark:- ark:- |'])
 
+      cmd.extend(['select-voiced-frames', 'ark:-', 'scp:'+data+'/vad.scp', 'ark:- |'])
+
       cmd.extend(['compute-cmvn-stats', 'ark:-', exp+'/cmvn.mat'])
 
       Popen(' '.join(cmd), shell=True).communicate()
@@ -590,6 +592,8 @@ class SeqDataGenerator:
     for feat, vad in zip(features, vads):
 
       assert len(feat) == len(vad)
+      if vad.sum() <= 200:
+        continue
 
       # last part, pad zero
       num_zero = max_length - len(feat)
@@ -611,9 +615,27 @@ class SeqDataGenerator:
       mask: np matrix [batch_size, max_length]
     '''
     # read split data until we have enough for this batch
-    while (self.batch_pointer + self.batch_size >= len (self.x)):
+    while (self.batch_pointer + self.batch_size >= len(self.x)):
       if not self.loop and self.split_data_counter == self.num_split:
         # not loop mode and we arrive the end, do not read anymore
+        '''
+        # to complete this, we need to modify self.acc and self.loss and add one more mask; too complicated
+        if self.batch_pointer < len(self.x):
+          # last batch, need to pad to batches
+          num_zero = self.batch_size - (len(self.x) - self.batch_pointer)
+          x_pad = numpy.zeros((num_zero, self.max_length, self.feat_dim))
+          y_pad = numpy.zeros((num_zero))
+          mask_pad = numpy.zeros((num_zero, self.max_length))
+          x_mini = numpy.concatenate((self.x[self.batch_pointer:], x_pad))
+          y_mini = numpy.concatenate((self.y[self.batch_pointer:], y_pad))
+          mask_mini = numpy.concatenate((self.mask[self.batch_pointer:], mask_pad))
+
+          self.last_batch_utts = len(self.x) - self.batch_pointer
+          self.batch_pointer += self.batch_size
+          return x_mini, y_mini, mask_mini
+        else:
+          return None, None, None
+        '''
         return None, None, None
 
       x, y, vad = self.get_next_split_data()
@@ -641,7 +663,6 @@ class SeqDataGenerator:
     mask_mini = self.mask[self.batch_pointer:self.batch_pointer+self.batch_size]
 
     self.last_batch_utts = len(y_mini)
-
     self.batch_pointer += self.batch_size
 
     return x_mini, y_mini, mask_mini
