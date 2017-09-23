@@ -206,6 +206,8 @@ def build_layer(line, layer_in, seq_length = None, mask_holder = None,
     layer_out = tf.sigmoid(layer_in)
   elif layer_type == '<Relu>':
     layer_out = tf.nn.relu(layer_in)
+  elif layer_type == '<Relu6>':
+    layer_out = tf.nn.relu6(layer_in)
   elif layer_type == '<Tanh>':
     layer_out = tf.tanh(layer_in)
   elif layer_type == '<Softmax>':
