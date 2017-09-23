@@ -82,10 +82,10 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
   else:
     affine_layer = 'AffineTransform'
 
-  hid_bias_mean = conf.get('hid_bias_mean', -2.0)
+  hid_bias_mean = conf.get('hid_bias_mean', 0.0)
 
   #Set bias range for hidden activations (+/- 1/2 range around mean)
-  hid_bias_range = conf.get('hid_bias_range', 4.0)
+  hid_bias_range = conf.get('hid_bias_range', 0.1)
 
   nnet_proto.write("<NnetProto>\n")
 
@@ -97,7 +97,10 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
        (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
 
-  nnet_proto.write("<Pooling> <InputDim> %d <OutputDim> %d\n" % (layer_out_dim, layer_out_dim))
+  use_std = conf.get('use_std', False)
+  layer_in_dim = layer_out_dim
+  layer_out_dim = 2*layer_in_dim if use_std else layer_in_dim
+  nnet_proto.write("<Pooling> <InputDim> %d <OutputDim> %d <UseStd> %s\n" % (layer_in_dim, layer_out_dim, use_std))
 
   embedding_layers = conf['embedding_layers']
   embedding_layer_units = [ int(i) for i in embedding_layers.split(':') ]
@@ -110,7 +113,6 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
        (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], layer_out_dim, layer_out_dim))
 
-  # Last AffineTransform (10x smaller learning rate on bias)
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
     (affine_layer, layer_out_dim, output_dim, 0.0, 0.0, \
      (param_stddev_factor * Glorot(layer_out_dim, output_dim, with_glorot))))

@@ -18,7 +18,7 @@ def parse(config_tuple):
                'initial_learning_rate', 'final_learning_rate', 'momentum', 
                'keep_prob', 'keep_in_prob', 'keep_out_prob']:
       config_parsed[i] = float(config_dict[i])
-    elif i in ['batch_norm', 'with_softmax', 'use_peepholes', 'clip_gradients']:
+    elif i in ['batch_norm', 'with_softmax', 'use_peepholes', 'clip_gradients', 'use_std']:
       config_parsed[i] = str2boolean(config_dict[i])
     elif i in ['nonlin', 'op_type', 'nnet_arch', 'lstm_type', 'feat_type', 
                'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers', 

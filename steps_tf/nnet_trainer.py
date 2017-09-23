@@ -181,13 +181,13 @@ class NNTrainer(object):
       duration = time.time() - start_time
       count_steps += 1
 
-      if keep_acc or count_steps % 1000 == 0 or count_steps == 1:
+      if keep_acc or count_steps % 10 == 0 or count_steps == 1:
         acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
         sum_accs += 1.0 * acc
         sum_acc_counts += 1.0 * train_gen.get_last_batch_counts()
 
         # Print status to stdout.
-        if count_steps % 1000 == 0:
+        if count_steps % 10 == 0 or count_steps == 1:
           iter_logger.info("Step %5d: avg loss = %.6f on %d %s (%.2f sec passed, %.2f %s per sec), peek acc: %.2f%%", 
                     count_steps, sum_avg_loss / (count_steps*self.num_gpus), 
                     sum_counts, train_gen.count_units(), duration, sum_counts / duration, 
