@@ -470,11 +470,14 @@ class SeqDataGenerator:
     self.max_length = conf.get('max_length', 1000)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
+    self.min_frames = conf.get('min_frames', 200)
 
     self.loop = loop    # keep looping over dataset
     self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
 
     self.temp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
+
+    shutil.copyfile(data+'/vad.scp', exp+'/'+name+'.vad.scp')
 
     ## Read number of utterances
     with open (data + '/utt2spk') as f:
@@ -592,14 +595,17 @@ class SeqDataGenerator:
     for feat, vad in zip(features, vads):
 
       assert len(feat) == len(vad)
-      if vad.sum() <= 200:
+      if vad.sum() <= self.min_frames:
         continue
 
-      # last part, pad zero
-      num_zero = max_length - len(feat)
-      zeros2pad = numpy.zeros((num_zero, len(feat[0])))
-      features_pad.append(numpy.concatenate((feat, zeros2pad)))
-      mask.append(numpy.append(vad, numpy.zeros(num_zero)))
+      if max_length > len(feat) :
+        num_zero = max_length - len(feat)
+        zeros2pad = numpy.zeros((num_zero, len(feat[0])))
+        features_pad.append(numpy.concatenate((feat, zeros2pad)))
+        mask.append(numpy.append(vad, numpy.zeros(num_zero)))
+      else:
+        features_pad.append(feat[:max_length])
+        mask.append(vad[:max_length])
 
     features_pad = numpy.array(features_pad)
     mask = numpy.array(mask)
