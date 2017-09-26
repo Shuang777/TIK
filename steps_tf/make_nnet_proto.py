@@ -68,8 +68,11 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
   num_hid_neurons = conf['hidden_units']
   with_glorot = conf.get('with_glorot', True)
   
-  #Use batch normalization for affine transform
+  #Use batch normalization after nonlin
   batch_norm = conf.get('batch_norm', False)
+
+  #use batch normalization within affine transformation
+  affine_batch_norm = conf.get('affine_batch_norm', False)
   
   #Factor to rescale Normal distriburtion for initalizing weight matrices
   param_stddev_factor = conf.get('param_stddev_factor', 0.1)
@@ -77,8 +80,8 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
   #Add softmax layer at the end
   with_softmax = conf.get('with_softmax', True)
 
-  if batch_norm:
-    affine_layer = 'BatchNormalization'
+  if affine_batch_norm:
+    affine_layer = 'AffineBatchNormalization'
   else:
     affine_layer = 'AffineTransform'
 
@@ -96,6 +99,8 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
       (affine_layer, layer_in_dim, layer_out_dim, hid_bias_mean, hid_bias_range, \
        (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
+    if batch_norm:
+      nnet_proto.write("<BatchNormalization> <InputDim> %d <OutputDim> %d\n" % (num_hid_neurons, num_hid_neurons))
 
   use_std = conf.get('use_std', False)
   layer_in_dim = layer_out_dim
@@ -112,11 +117,13 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
       (affine_layer, layer_in_dim, layer_out_dim, hid_bias_mean, hid_bias_range, \
        (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], layer_out_dim, layer_out_dim))
+    if batch_norm:
+      nnet_proto.write("<BatchNormalization> <InputDim> %d <OutputDim> %d\n" % (layer_out_dim, layer_out_dim))
 
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
     (affine_layer, layer_out_dim, output_dim, 0.0, 0.0, \
      (param_stddev_factor * Glorot(layer_out_dim, output_dim, with_glorot))))
-
+  
   # Optionaly append softmax
   if with_softmax:
     nnet_proto.write("<Softmax> <InputDim> %d <OutputDim> %d\n" % (output_dim, output_dim))

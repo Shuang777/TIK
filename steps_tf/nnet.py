@@ -202,6 +202,8 @@ def build_layer(line, layer_in, seq_length = None, mask_holder = None,
     layer_out = layer.linear_transform(info, layer_in)
   elif layer_type == '<BatchNormalization>':
     layer_out = layer.batch_normalization(info, layer_in)
+  elif layer_type == '<AffineBatchNormalization>':
+    layer_out = layer.affine_batch_normalization(info, layer_in)
   elif layer_type == '<Sigmoid>':
     layer_out = tf.sigmoid(layer_in)
   elif layer_type == '<Relu>':

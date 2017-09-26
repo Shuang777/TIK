@@ -26,11 +26,13 @@ def affine_transform(info, layer_in):
 
   if len(layer_in.get_shape()) == 2:
     layer_out = tf.matmul(layer_in, weights) + biases
-  elif len(layer_in.get_shape()) == 3:   # this is after a LSTM layer, we need to do some reshaping
+  elif len(layer_in.get_shape()) == 3:   # this is of size [num_batch, num_frame, feat_dim]
     batch_size, max_length = layer_in.get_shape()[:2]
     layer_out = tf.reshape(layer_in, [-1, input_dim])
     layer_out = tf.matmul(layer_out, weights) + biases
     layer_out = tf.reshape(layer_out, [int(batch_size), -1, output_dim])
+  else:
+    raise RuntimeError("affine_transform: does not support layer_in of shape %s" % layer_in.get_shape())
 
   return layer_out
 
@@ -51,7 +53,7 @@ def linear_transform(info, layer_in):
   return layer_out
 
 
-def batch_normalization(info, layer_in):
+def affine_batch_normalization(info, layer_in):
   # Small epsilon value for the batch normalization transform
   epsilon = 1e-3
 
@@ -61,16 +63,40 @@ def batch_normalization(info, layer_in):
   output_dim = int(info_dict['<OutputDim>'])
   stddev = float(info_dict['<ParamStddev>'])
 
-  weights = tf.get_variable(tf.truncated_normal([input_dim, output_dim],
-                          stddev = stddev),
-                        name = 'weights')
+  truncated_normal_initializer = tf.truncated_normal_initializer(mean = 0, stddev = stddev)
+  weights = tf.get_variable(name = 'weights', shape = [input_dim, output_dim],
+                            initializer = truncated_normal_initializer)
   
-  z = tf.matmul(layer_in, weights)
-  batch_mean, batch_var = tf.nn.moments(z, [0])
-  scale = tf.get_variable(tf.ones([output_dim]), 'scale')
-  beta = tf.get_variable(tf.zeros([output_dim]), 'beta')
+  if len(layer_in.get_shape()) == 2:
+    z = tf.matmul(layer_in, weights)
+  elif len(layer_in.get_shape()) == 3:   # this is of size [num_batch, num_frame, feat_dim]
+    batch_size, max_length = layer_in.get_shape()[:2]
+    z = tf.reshape(layer_in, [-1, input_dim])
+    z = tf.matmul(z, weights)
+    z = tf.reshape(z, [int(batch_size), -1, output_dim])
+
+  assert(len(layer_in.get_shape()) in [2, 3])
+  axes = [0] if len(layer_in.get_shape()) == 2 else [0, 1]
+  batch_mean, batch_var = tf.nn.moments(z, axes)
+  scale = tf.get_variable(name = 'scale', shape = [output_dim], initializer = tf.ones_initializer())
+  beta = tf.get_variable(name = 'beta', shape = [output_dim], initializer = tf.zeros_initializer())
   layer_out = tf.nn.batch_normalization(z, batch_mean, batch_var, beta, scale, epsilon)
 
+  return layer_out
+
+
+def batch_normalization(info, layer_in):
+  epsilon = 1e-3
+  info_dict = info2dict(info)
+  input_dim = int(info_dict['<InputDim>'])
+  output_dim = int(info_dict['<OutputDim>'])
+
+  assert(len(layer_in.get_shape()) in [2, 3])
+  axes = [0] if len(layer_in.get_shape()) == 2 else [0, 1]
+  batch_mean, batch_var = tf.nn.moments(layer_in, axes)
+  scale = tf.get_variable(name = 'scale', shape = [output_dim], initializer = tf.ones_initializer())
+  beta = tf.get_variable(name = 'beta', shape = [output_dim], initializer = tf.zeros_initializer())
+  layer_out = tf.nn.batch_normalization(layer_in, batch_mean, batch_var, beta, scale, epsilon)
   return layer_out
 
 
