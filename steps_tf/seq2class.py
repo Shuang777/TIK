@@ -29,6 +29,7 @@ class SEQ2CLASS(object):
 
   def init_seq2class_single(self, graph, nnet_proto_file, seed):
     with graph.as_default():
+      tf.set_random_seed(seed)
       feats_holder, mask_holder, labels_holder = nnet.placeholder_seq2class(self.input_dim, 
                                                            self.max_length,
                                                            self.batch_size)
