@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import os
 import sys
 import re
@@ -150,6 +148,7 @@ logger.info("### neural net training started at %s", datetime.datetime.today())
 loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, keep_acc = True)
 logger.info("ITERATION 0: loss on cv %.3f, acc_cv %s", loss, acc)
 
+
 for i in range(max_iters):
   log_info = "ITERATION %d:" % (i+1) 
 
@@ -186,6 +185,7 @@ for i in range(max_iters):
     open(exp+'/nnet/iter%02d.model.txt'%(i+1), 'w').write(mlp_rej)
     logger.info("%s nnet rejected %s, acc_tr %s, acc_cv %s", log_info, mlp_rej.split('/')[-1], acc_tr, acc_cv)
     nnet.read(mlp_best)
+    nnet.init_training(optimizer_conf)
 
   open(exp + '/.done_iter%02d'%(i+1), 'w').write("")
   
