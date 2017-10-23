@@ -22,11 +22,11 @@ class FrameDataGenerator:
     self.splice = conf.get('context_width', 5)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
+    self.max_split_data_size = 20000 ## These many utterances are loaded into memory at once.
 
     self.loop = loop    # keep looping over dataset
-    self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
 
-    self.temp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
+    self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/suhang/exp/tmp/'))
 
     ## Read number of utterances
     with open (data + '/utt2spk') as f:
@@ -40,9 +40,12 @@ class FrameDataGenerator:
       cmd = ['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
                  'scp:' + self.data + '/cmvn.scp',
                  'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
-    else:
+    elif conf['cmvn_type'] == 'sliding':
       cmd = ['apply-cmvn-sliding', '--norm-vars=false', '--center=true', '--cmn-window=300', 
               'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
+    else:
+      raise RuntimeError("cmvn_type %s not supported" % conf['cmvn_type'])
+
                   
     if self.feat_type == 'delta':
       cmd.extend(['add-deltas', self.delta_opts, 'ark:-', 'ark:- |'])
@@ -55,7 +58,7 @@ class FrameDataGenerator:
       cmd.extend(['transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
               '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-|'])
     
-    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
+    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.tmp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
     Popen(' '.join(cmd), shell=True).communicate()
 
     if name == 'train':
@@ -67,7 +70,7 @@ class FrameDataGenerator:
     self.num_split = int(math.ceil(1.0 * self.num_utts / self.max_split_data_size))
     for i in range(self.num_split):
       split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
-      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.temp_dir, self.name, i)
+      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.tmp_dir, self.name, i)
       Popen (split_scp_cmd, shell=True).communicate()
     
     numpy.random.seed(seed)
@@ -86,7 +89,7 @@ class FrameDataGenerator:
 
 
   def clean (self):
-    shutil.rmtree(self.temp_dir)
+    shutil.rmtree(self.tmp_dir)
 
 
   def has_data(self):
@@ -108,7 +111,7 @@ class FrameDataGenerator:
 
     p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice),
                  '--right-context='+str(self.splice), 
-                 'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
+                 'scp:'+self.tmp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
                  'ark:-'], stdout=PIPE, stderr=DEVNULL)
     p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat',
                  'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
@@ -211,7 +214,7 @@ class UttDataGenerator:
     self.loop = loop    # keep looping over dataset
     self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
 
-    self.temp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
+    self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
     ## Read number of utterances
     with open (data + '/utt2spk') as f:
@@ -240,7 +243,7 @@ class UttDataGenerator:
       cmd.extend(['transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
               '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-|'])
     
-    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
+    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.tmp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
     Popen(' '.join(cmd), shell=True).communicate()
 
     if name == 'train':
@@ -252,7 +255,7 @@ class UttDataGenerator:
     self.num_split = int(math.ceil(1.0 * self.num_utts / self.max_split_data_size))
     for i in range(self.num_split):
       split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
-      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.temp_dir, self.name, i)
+      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.tmp_dir, self.name, i)
       Popen (split_scp_cmd, shell=True).communicate()
     
     numpy.random.seed(seed)
@@ -273,7 +276,7 @@ class UttDataGenerator:
 
 
   def clean (self):
-    shutil.rmtree(self.temp_dir)
+    shutil.rmtree(self.tmp_dir)
 
 
   def has_data(self):
@@ -295,7 +298,7 @@ class UttDataGenerator:
 
     p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice),
                  '--right-context='+str(self.splice), 
-                 'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
+                 'scp:'+self.tmp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
                  'ark:-'], stdout=PIPE, stderr=DEVNULL)
     p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat',
                  'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)
@@ -475,7 +478,7 @@ class SeqDataGenerator:
     self.loop = loop    # keep looping over dataset
     self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
 
-    self.temp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
+    self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
     shutil.copyfile(data+'/vad.scp', exp+'/'+name+'.vad.scp')
 
@@ -489,7 +492,7 @@ class SeqDataGenerator:
     cmd = ['apply-cmvn-sliding', '--norm-vars=false', '--center=true', '--cmn-window=300', 
            'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
                   
-    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.temp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
+    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.tmp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
     Popen(' '.join(cmd), shell=True).communicate()
 
     if name == 'train':
@@ -507,7 +510,7 @@ class SeqDataGenerator:
 
     for i in range(self.num_split):
       split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
-      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.temp_dir, self.name, i)
+      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.tmp_dir, self.name, i)
       Popen (split_scp_cmd, shell=True).communicate()
     
     numpy.random.seed(seed)
@@ -529,7 +532,7 @@ class SeqDataGenerator:
 
 
   def clean (self):
-    shutil.rmtree(self.temp_dir)
+    shutil.rmtree(self.tmp_dir)
 
 
   def has_data(self):
@@ -550,7 +553,7 @@ class SeqDataGenerator:
     '''
 
     cmd = ['add-deltas', self.delta_opts, 
-           'scp:'+self.temp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp', 
+           'scp:'+self.tmp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp', 
            'ark:- |']
     cmd.extend(['splice-feats', '--left-context='+str(self.splice),
                  '--right-context='+str(self.splice), 'ark:-', 'ark:-|'])
