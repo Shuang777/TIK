@@ -81,8 +81,11 @@ logger.info("use-gpu: %s", str(args.use_gpu))
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
 logger.info("initializing the graph")
+
+# we have feature_conf['batch_size'] * num_gpus as batch_size because of multi-gpu training.
+# but during decoding we only use at most 1 gpu
 nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
-                 feature_conf['batch_size'] * num_gpus, num_gpus = num_gpus,
+                 feature_conf['batch_size'] * num_gpus, num_gpus = 1,
                  max_length = max_length, use_gpu = args.use_gpu,
                  jitter_window = jitter_window)
 
