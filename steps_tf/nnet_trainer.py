@@ -377,3 +377,18 @@ class NNTrainer(object):
     posts = np.concatenate(posts)
 
     return posts[0:len(feats),:]
+
+
+  def get_embedding_seq2class(self, feats, vad):
+    embedding = self.model.get_embedding(feats, mask)
+    return embedding
+
+
+  def gen_embedding(self, feats, vad):
+    if self.arch == 'seq2class':
+      embedding = self.get_embedding_seq2class(feats, vad)
+    else:
+      raise RuntimeError("arch type %s not supported", self.arch)
+    return embedding
+
+

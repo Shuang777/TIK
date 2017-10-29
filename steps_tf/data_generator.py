@@ -22,7 +22,7 @@ class FrameDataGenerator:
     self.splice = conf.get('context_width', 5)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
-    self.max_split_data_size = 20000 ## These many utterances are loaded into memory at once.
+    self.max_split_data_size = 5000 ## These many utterances are loaded into memory at once.
 
     self.loop = loop    # keep looping over dataset
 
