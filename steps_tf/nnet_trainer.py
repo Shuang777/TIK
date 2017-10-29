@@ -25,28 +25,36 @@ class NNTrainer(object):
   session is initialized either by read() or by init_nnet().
   '''
 
-  def __init__(self, arch, input_dim, output_dim, batch_size, num_gpus = 1, use_gpu = True,
-               summary_dir = None, max_length = None, jitter_window = None):
+  def __init__(self, arch, input_dim, output_dim, feature_conf, num_gpus = 1, 
+               use_gpu = True, summary_dir = None):
     ''' just some basic config for this trainer '''
     self.arch = arch
+
+    #tensorflow related
     self.graph = None
     self.sess = None
-    self.batch_size = batch_size
-    self.max_length = max_length
-    self.jitter_window = jitter_window
+
+    #feature related
+    self.batch_size = feature_conf['batch_size']
+    self.max_length = feature_conf.get('max_length', 0)
+    self.jitter_window = feature_conf.get('jitter_window', 0)
+
+    #gpu related
+    self.wait_gpu = True
     self.num_gpus = num_gpus
     self.use_gpu = use_gpu
+
+    #summary directory
     self.summary_dir = summary_dir
-    self.wait_gpu = True
 
     if self.arch == 'dnn':
-      self.model = DNN(input_dim, output_dim, batch_size, num_gpus)
+      self.model = DNN(input_dim, output_dim, self.batch_size, num_gpus)
     elif self.arch == 'bn':
-      self.model = BN(input_dim, output_dim, batch_size, num_gpus)
+      self.model = BN(input_dim, output_dim, self.batch_size, num_gpus)
     elif self.arch == 'lstm':
-      self.model = LSTM(input_dim, output_dim, batch_size, max_length, num_gpus)
+      self.model = LSTM(input_dim, output_dim, self.batch_size, max_length, num_gpus)
     elif self.arch == 'seq2class':
-      self.model = SEQ2CLASS(input_dim, output_dim, batch_size, max_length, num_gpus)
+      self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, max_length, num_gpus)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
     

@@ -51,7 +51,7 @@ $debug && $pdb && debug_args='-m pdb'
 
 if [ $stage -le 0 ]; then
 ## Train
-python3 $debug_args steps_tf/run_tf.py $config $train $train_ali $gmm $exp
+python3 $debug_args steps_tf/run_tf.py $config $train $train_ali $exp
 
 $single && exit
 fi

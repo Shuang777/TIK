@@ -7,7 +7,7 @@ import logging
 import fnmatch
 import atexit
 from six.moves import configparser
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, check_output
 from nnet_trainer import NNTrainer
 from data_generator import FrameDataGenerator, UttDataGenerator
 import section_config   # my own config parser after configparser
@@ -15,13 +15,6 @@ import section_config   # my own config parser after configparser
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
-
-#get number of output labels
-def get_model_pdfs (gmm):
-  p1 = Popen (['hmm-info', '%s/final.mdl' % gmm], stdout = PIPE)
-  for line in p1.stdout.read().splitlines():
-    if 'pdfs' in str(line):
-      return int(line.split()[-1])
 
 def match_iter_model(directory, model_base):
   for file in os.listdir(directory):
@@ -42,14 +35,13 @@ def get_alignments(exp, ali_dir):
 if __name__ != '__main__':
   raise ImportError ('This script can only be run, and can\'t be imported')
 
-if len(sys.argv) != 6:
-  raise TypeError ('USAGE: run_tf.py data_tr ali_tr gmm_dir dnn_dir')
+if len(sys.argv) != 5:
+  raise TypeError ('USAGE: run_tf.py data_tr ali_tr dnn_dir')
 
 config_file = sys.argv[1]
 data        = sys.argv[2]
 ali_dir     = sys.argv[3]
-gmm         = sys.argv[4]
-exp         = sys.argv[5]
+exp         = sys.argv[4]
 
 # prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
@@ -57,9 +49,10 @@ os.path.isdir(exp+'/log') or os.makedirs (exp+'/log')
 os.path.isdir(exp+'/nnet') or os.makedirs (exp+'/nnet')
 
 # copy necessary files
-shutil.copyfile(gmm+'/final.mat', exp+'/final.mat')
-shutil.copyfile(gmm+'/tree', exp+'/tree')
-Popen (['copy-transition-model', '--binary=false', gmm+'/final.mdl' ,exp+'/final.mdl']).communicate()
+if os.path.exists(ali_dir+'/final.mat'):
+  shutil.copyfile(ali_dir+'/final.mat', exp+'/final.mat')
+shutil.copyfile(ali_dir+'/tree', exp+'/tree')
+Popen (['copy-transition-model', ali_dir+'/final.mdl', exp+'/final.mdl']).communicate()
 
 # read config file
 config = configparser.ConfigParser()
@@ -113,10 +106,9 @@ atexit.register(cv_gen.clean)
 
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
-output_dim = get_model_pdfs(gmm)
-max_length = feature_conf.get('max_length', None)
-sliding_window = feature_conf.get('sliding_window', None)
-jitter_window = feature_conf.get('jitter_window', None)
+output_dim = int(check_output(
+               'tree-info --print-args=false %s/tree | grep num-pdfs | awk \'{print $2}\''
+               % ali_dir, shell=True).strip())
 
 # save alignment priors
 tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
@@ -124,24 +116,14 @@ tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
 # save input_dim and output_dim
 open(exp+'/input_dim', 'w').write(str(input_dim))
 open(exp+'/output_dim', 'w').write(str(output_dim))
-if max_length is not None:
-  open(exp+'/max_length', 'w').write(str(max_length))
-if sliding_window is not None:
-  open(exp+'/sliding_window', 'w').write(str(sliding_window))
-if jitter_window is not None:
-  open(exp+'/jitter_window', 'w').write(str(jitter_window))
 
-if 'init_file' in scheduler_conf:
-  logger.info("Initializing graph using %s", scheduler_conf['init_file'])
-
-nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
-                 feature_conf['batch_size'], num_gpus = num_gpus,
-                 summary_dir = summary_dir, max_length = max_length)
+nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, feature_conf, 
+                 num_gpus = num_gpus, summary_dir = summary_dir)
 
 mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):
-  mlp_best = open(exp+'/.mlp_best').read()
+  mlp_best = open(exp+'/.mlp_best').read().strip()
   logger.info("loading model from %s", mlp_best)
   nnet.read(mlp_best)
 elif os.path.isfile(mlp_init+'.index'):
