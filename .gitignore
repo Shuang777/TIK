@@ -4,3 +4,5 @@ steps_tf/kaldi_io/*.pyc
 steps_tf/kaldi_io/__pycache__
 steps_tf/kaldi_io/*.depend.mk
 steps_tf/kaldi_io/*.so
+
+pick-gpu/pick-gpu
