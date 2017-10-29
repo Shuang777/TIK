@@ -92,6 +92,7 @@ class NNTrainer(object):
     with self.graph.as_default():
       self.saver = tf.train.import_meta_graph(filename+'.meta')
 
+    logger.info("reading model from %s" % filename)
     self.model.read_from_file(self.graph, self.use_gpu)
 
     if first_session:

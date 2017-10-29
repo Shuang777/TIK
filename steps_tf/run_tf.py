@@ -72,9 +72,7 @@ optimizer_conf = section_config.parse(config.items('optimizer'))
 scheduler_conf = section_config.parse(config.items('scheduler'))
 feature_conf = section_config.parse(config.items('feature'))
 
-nnet_proto_file = general_conf.get('nnet_proto', None)
-summary_dir = general_conf.get('summary_dir', None)
-summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
+summary_dir = exp+'/summary'
 
 # separate data into 10% cv and 90% training
 Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
@@ -131,13 +129,12 @@ elif os.path.isfile(mlp_init+'.index'):
   nnet.read(mlp_init)
   mlp_best = mlp_init
 else:
-  if nnet_proto_file is None:
-    nnet_proto_file = exp+'/nnet.proto'
-    nnet.make_proto(nnet_conf, nnet_proto_file)
+  if 'nnet_proto' in general_conf:
+    shutil.copyfile(general_conf['nnet_proto'], exp+'/nnet.proto')
   else:
-    shutil.copyfile(nnet_proto_file, exp+'/nnet.proto')
+    nnet.make_proto(nnet_conf, exp+'/nnet.proto')
 
-  nnet.init_nnet(nnet_proto_file)
+  nnet.init_nnet(exp+'/nnet.proto')
 
   logger.info("initialize model to %s", mlp_init)
   nnet.write(mlp_init)
