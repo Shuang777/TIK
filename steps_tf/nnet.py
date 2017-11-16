@@ -186,7 +186,7 @@ def inference_seq2class(feats_holder, mask_holder, nnet_proto_file,
       layer_out = build_layer(line, layer_in)
       layer_in = layer_out
       count_layer += 1
-      if line.startswith('<Sigmoid>') or line.startswith('Relu'):
+      if line.startswith('<Sigmoid>') or line.startswith('<Relu6'):
         embeddings.append(layer_out)
 
   logits = layer_out
