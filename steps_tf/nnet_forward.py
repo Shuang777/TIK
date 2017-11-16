@@ -32,8 +32,9 @@ arg_parser.add_argument('--use-gpu', dest = 'use_gpu', action = 'store_true')
 arg_parser.add_argument('--sleep', type = int)
 arg_parser.add_argument('--prior-counts', type = str, default = None)
 arg_parser.add_argument('--transform', type = str, default = None)
-arg_parser.add_argument('--apply_log', dest = 'apply_log', action = 'store_true')
+arg_parser.add_argument('--apply-log', dest = 'apply_log', action = 'store_true')
 arg_parser.add_argument('--no-softmax', dest = 'no_softmax', action = 'store_true')
+arg_parser.add_argument('--gpu-id', type = int, default = -1)
 arg_parser.add_argument('--verbose', dest = 'verbose', action = 'store_true')
 arg_parser.add_argument('data', type = str)
 arg_parser.add_argument('model_file', type = str)
@@ -60,8 +61,12 @@ splice = feature_conf['context_width']
 feat_type = feature_conf.get('feat_type', 'raw')
 delta_opts = feature_conf.get('delta_opts', '')
 
-feats = 'ark:apply-cmvn --utt2spk=ark:' + args.data + '/utt2spk ' + \
+if feature_conf.get('cmvn_type', 'utt') == 'utt':
+  feats = 'ark:apply-cmvn --utt2spk=ark:' + args.data + '/utt2spk ' + \
         ' scp:' + args.data + '/cmvn.scp scp:' + args.data + '/feats.scp ark:- |'
+elif feature_conf['cmvn_type'] == 'sliding':
+  feats = 'ark:apply-cmvn-sliding --norm-vars=false --center=true --cmn-window=300 scp:' + \
+          args.data + '/feats.scp ark:- |'
     
 if feat_type == 'delta':
   feats += ' add-deltas ' + delta_opts + ' ark:- ark:- |'
@@ -84,10 +89,9 @@ logger.info("initializing the graph")
 
 # we have feature_conf['batch_size'] * num_gpus as batch_size because of multi-gpu training.
 # but during decoding we only use at most 1 gpu
-nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
-                 feature_conf['batch_size'] * num_gpus, num_gpus = 1,
-                 max_length = max_length, use_gpu = args.use_gpu,
-                 jitter_window = jitter_window)
+feature_conf['batch_size'] = feature_conf['batch_size'] * num_gpus
+nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, feature_conf, 
+                 num_gpus = 1, use_gpu = args.use_gpu, gpu_id = args.gpu_id)
 
 logger.info("loading the model %s", args.model_file)
 model_name=open(args.model_file, 'r').read()
@@ -110,7 +114,7 @@ writer = kaldi_io.BaseFloatMatrixWriter('ark:-')
 for uid, feats in reader:
   nnet_out = nnet.predict (feats, no_softmax = args.no_softmax)
   if args.apply_log:
-    nnet_out = np.log(nnet_log)
+    nnet_out = np.log(nnet_out)
 
   if args.prior_counts is not None:
     log_likes = nnet_out - log_priors
@@ -119,6 +123,6 @@ for uid, feats in reader:
   writer.write(uid, nnet_out)
   
   count += 1
-  if args.verbose and count % 100 == 0:
+  if args.verbose and count % 10 == 0:
     logger.info("LOG (nnet_forward.py) %d utterances processed" % count)
 
