@@ -2,13 +2,29 @@
  * kaldi-io.cpp
  *
  *  Created on: Jul 29, 2014
- *      Author: chorows
+ *      Author: chorowski
  */
+
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 
 extern "C" {
 #include "Python.h"
 #include "numpy/arrayobject.h"
 }
+
+#if PY_MAJOR_VERSION >= 3
+int init_numpy() {
+  import_array();
+}
+#define PYSTRING_ASSTRING PyBytes_AsString
+#define PICKLE "pickle"
+#else
+void init_numpy() {
+  import_array();
+}
+#define PYSTRING_ASSTRING PyString_AsString
+#define PICKLE "cPickle"
+#endif
 
 #include <boost/shared_ptr.hpp>
 #include <boost/static_assert.hpp>
@@ -34,7 +50,7 @@ namespace bp = boost::python;
 //keep a copy of the cPickle module in cache
 struct PickleWrapper {
   PickleWrapper() {
-    bp::object pickle = bp::import("cPickle");
+    bp::object pickle = bp::import(PICKLE);
     loads = pickle.attr("loads");
     dumps = pickle.attr("dumps");
   }
@@ -66,13 +82,13 @@ class PyObjectHolder {
         os.write(string, len);
       } else {  //use repr
         PyObject* repr = PyObject_Repr(t.ptr());
-        os << PyString_AsString(repr) << '\n';
+	os << PYSTRING_ASSTRING(repr) << '\n';
         Py_DECREF(repr);
       }
       return os.good();
 
     } catch (const std::exception &e) {
-      KALDI_WARN<< "Exception caught writing Table object. " << e.what();
+      KALDI_WARN<< "Exception caught writing Table object: " << e.what();
       return false;  // Write failure.
     }
   }
@@ -99,7 +115,7 @@ class PyObjectHolder {
       }
       return true;
     } catch (std::exception &e) {
-      KALDI_WARN << "Exception caught reading Table object. " << e.what();
+      KALDI_WARN << "Exception caught reading Table object";
       return false;
     }
   }
@@ -107,17 +123,18 @@ class PyObjectHolder {
   static bool IsReadInBinary() {return true;}
 
   const T &Value() const {return t_;}  // if t is a pointer, would return *t_;
-
-  void Clear() {}
-
-  void Swap(PyObjectHolder * another) {
-    std::swap(t_, another->t_);
+  
+  void Swap(PyObjectHolder *other) {
+    // the t_ values are pointers so this is a shallow swap.
+    std::swap(t_, other->t_);
   }
 
   bool ExtractRange(const PyObjectHolder &other, const std::string &range) {
-      KALDI_ERR << "ExtractRange is not defined for this type of holder.";
-      return false;
+    KALDI_ERR << "ExtractRange is not defined for this type of holder.";
+    return false;
   }
+  
+  void Clear() {}
 
   ~PyObjectHolder() {}
 
@@ -157,7 +174,7 @@ struct MatrixToNdArrayConverter {
   }
 
   static inline kaldi::NpWrapperMatrix<Real>* python_to_kaldi(bp::object o) {
-    PyObject* raw_arr = PyArray_FromAny(o.ptr(),PyArray_DescrFromType(kaldi::get_np_type<Real>()), 2, 2, NPY_C_CONTIGUOUS | NPY_FORCECAST, NULL);
+    PyObject* raw_arr = PyArray_FromAny(o.ptr(),PyArray_DescrFromType(kaldi::get_np_type<Real>()), 2, 2, NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_FORCECAST, NULL);
     //why does this fail: bp::object arr(bp::handle<>(raw_arr));
     bp::object arr=bp::object(bp::handle<>(raw_arr));
     return new kaldi::NpWrapperMatrix<Real>((PyArrayObject*)arr.ptr());
@@ -185,7 +202,7 @@ struct VectorToNdArrayConverter {
   }
 
   static inline kaldi::NpWrapperVector<Real>* python_to_kaldi(bp::object o) {
-    PyObject* raw_arr = PyArray_FromAny(o.ptr(),PyArray_DescrFromType(kaldi::get_np_type<Real>()), 1, 1, NPY_C_CONTIGUOUS | NPY_FORCECAST, NULL);
+    PyObject* raw_arr = PyArray_FromAny(o.ptr(),PyArray_DescrFromType(kaldi::get_np_type<Real>()), 1, 1, NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_FORCECAST, NULL);
     //why does this fail: bp::object arr(bp::handle<>(raw_arr));
     bp::object arr=bp::object(bp::handle<>(raw_arr));
     return new kaldi::NpWrapperVector<Real>((PyArrayObject*)arr.ptr());
@@ -205,7 +222,7 @@ struct VectorToNDArrayBPConverter {
     bp::object arr=bp::object(bp::handle<>(
         ao
         ));
-    std::copy(vec.begin(), vec.end(), (T*)PyArray_DATA(ao));
+    std::copy(vec.begin(), vec.end(), (T*)PyArray_DATA((PyArrayObject*)ao));
     return bp::incref(arr.ptr());
   }
 };
@@ -241,7 +258,7 @@ class PythonToKaldiHolder {
       auto_ptr<typename HW::T> obj(Converter::python_to_kaldi(t));
       return HW::Write(os, binary, (*obj));
     } catch (std::exception &e) {
-      KALDI_WARN << "Exception caught reading Table object. " << e.what();
+      KALDI_WARN << "Exception caught reading Table object";
       return false;
     }
   }
@@ -256,17 +273,20 @@ class PythonToKaldiHolder {
   static bool IsReadInBinary() {return true;}
 
   const T &Value() const {return t_;}  // if t is a pointer, would return *t_;
-
-  void Clear() {}
-
-  void Swap(PythonToKaldiHolder<Converter> * another) {
-    std::swap(t_, another->t_);
+  
+  void Swap(PythonToKaldiHolder<Converter> *other) {
+    // the t_ values are pointers so this is a shallow swap.
+    std::swap(t_, other->t_);
+    h_.Swap(&other->h_);
   }
 
   bool ExtractRange(const PythonToKaldiHolder<Converter> &other, const std::string &range) {
-      KALDI_ERR << "ExtractRange is not defined for this type of holder.";
-      return false;
+    KALDI_ERR << "ExtractRange is not defined for this type of holder.";
+    return false;
   }
+
+
+  void Clear() {}
 
   ~PythonToKaldiHolder() {}
 
@@ -388,6 +408,7 @@ public:
           .def("__iter__", &get_self_ref<Reader>,
                bp::return_internal_reference<1>())
           .def("next", sequential_reader_next<Reader>)
+          .def("__next__", sequential_reader_next<Reader>)
           .def("__exit__", &exit<Reader>)
           .def("done", &Reader::Done)
           .def("_kaldi_value", &Reader::Value,
@@ -424,7 +445,7 @@ PyObject* KALDI_BASE_FLOAT() {
 
 BOOST_PYTHON_MODULE(kaldi_io_internal)
 {
-  import_array();
+  init_numpy();
 
   bp::def("KALDI_BASE_FLOAT", &KALDI_BASE_FLOAT);
 
