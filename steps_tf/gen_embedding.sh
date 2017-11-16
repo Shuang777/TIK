@@ -8,6 +8,7 @@ stage=0
 nj=10
 tc_args=
 utt_mode=false
+use_gpu=false
 cmd=run.pl
 model_name=final.model.txt
 # End configuration
@@ -54,10 +55,12 @@ for f in $nnetdir/$model_name $data/feats.scp; do
   [ ! -f $f ] && echo "$0: no such file $f" && exit 1;
 done
 
+if $use_gpu; then  gpu_opts='--use-gpu'; fi
+
 if [ $stage -le 0 ]; then
   $cmd $tc_args JOB=1:$nj $dir/log/extract_xvectors.JOB.log \
-    python steps_tf/nnet_gen_embedding.py $sdata/JOB $nnetdir/$model_name  \
-    ark,scp:$dir/xvector.JOB.ark,$dir/xvector.JOB.scp
+    python steps_tf/nnet_gen_embedding.py $gpu_opts \
+    $sdata/JOB $nnetdir/$model_name ark,scp:$dir/xvector.JOB.ark,$dir/xvector.JOB.scp
 fi
 
 if [ $stage -le 1 ]; then

@@ -16,16 +16,14 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
-def load_utt2spk(utt2spk_file):
-  spk2target = {}
-  utt2target = {}
-  with open(utt2spk_file) as f:
+def load_utt2label(utt2label_file):
+  utt2label = {}
+  with open(utt2label_file) as f:
     for line in f:
-      utt, spk = line.strip().split()
-      if spk not in spk2target:
-        spk2target[spk] = len(spk2target)
-      utt2target[utt] = spk2target[spk]
-  return utt2target, len(spk2target)
+      utt, label = line.strip().split()
+      utt2label[utt] = int(label)
+  return utt2label
+
 
 def match_iter_model(directory, model_base):
   for file in os.listdir(directory):
@@ -66,29 +64,25 @@ scheduler_conf = section_config.parse(config.items('scheduler'))
 feature_conf = section_config.parse(config.items('feature'))
 
 nnet_proto_file = general_conf.get('nnet_proto', None)
-summary_dir = general_conf.get('summary_dir', None)
-summary_dir = exp + '/' + summary_dir if summary_dir is not None else None
-
-# separate data into 10% cv and 90% training
-Popen(['myutils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
 # Generate target files
-utt2target, num_spks = load_utt2spk(data + '/utt2spk')
+utt2label_train = load_utt2label(data + '/utt2label.train')
+utt2label_valid = load_utt2label(data + '/utt2label.valid')
 
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
-tr_gen = SeqDataGenerator (exp+'/tr90', utt2target, None, 
-                        exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
+tr_gen = SeqDataGenerator(data, utt2label_train, None, exp, 'train',
+                          feature_conf, shuffle=True, num_gpus = num_gpus)
 
-cv_gen = SeqDataGenerator (exp+'/cv10', utt2target, None,
-                        exp, 'cv', feature_conf, num_gpus = num_gpus)
+cv_gen = SeqDataGenerator(data, utt2label_valid, None, exp, 'valid', 
+                          feature_conf, num_gpus = num_gpus)
 
 atexit.register(tr_gen.clean)
 atexit.register(cv_gen.clean)
 
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
-output_dim = num_spks
+output_dim = max(utt2label_train.values())+1
 max_length = feature_conf.get('max_length', None)
 
 # save input_dim and output_dim
@@ -98,8 +92,8 @@ if max_length is not None:
   open(exp+'/max_length', 'w').write(str(max_length))
 
 nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
-                 feature_conf['batch_size'], num_gpus = num_gpus,
-                 summary_dir = summary_dir, max_length = max_length)
+                 feature_conf, num_gpus = num_gpus,
+                 summary_dir = exp+'/summary')
 
 mlp_init = exp+'/model.init'
 

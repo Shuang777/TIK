@@ -275,6 +275,10 @@ class SEQ2CLASS(object):
     return self.outputs
 
 
+  def get_embedding(self, index = 0):
+    return self.embeddings[index]
+
+
   def prep_feed(self, data_gen, learning_rate, keep_in_prob = None, keep_out_prob = None):
 
     x, y, mask = data_gen.get_batch_utterances()
@@ -287,10 +291,9 @@ class SEQ2CLASS(object):
     return feed_dict, x is not None
 
 
-  def prep_forward_feed(self, x, mask, keep_in_prob, keep_out_prob):
+  def prep_forward_feed(self, x, mask):
 
     feed_dict = { self.feats_holder: x,
-                  self.mask_holder: mask,
-                  self.keep_prob_holder: keep_prob }
+                  self.mask_holder: mask}
 
     return feed_dict

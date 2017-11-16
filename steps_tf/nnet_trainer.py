@@ -26,7 +26,7 @@ class NNTrainer(object):
   '''
 
   def __init__(self, arch, input_dim, output_dim, feature_conf, num_gpus = 1, 
-               use_gpu = True, summary_dir = None):
+               use_gpu = True, gpu_id = -1, summary_dir = None):
     ''' just some basic config for this trainer '''
     self.arch = arch
 
@@ -43,6 +43,7 @@ class NNTrainer(object):
     self.wait_gpu = True
     self.num_gpus = num_gpus
     self.use_gpu = use_gpu
+    self.gpu_id = gpu_id
 
     #summary directory
     self.summary_dir = summary_dir
@@ -52,12 +53,20 @@ class NNTrainer(object):
     elif self.arch == 'bn':
       self.model = BN(input_dim, output_dim, self.batch_size, num_gpus)
     elif self.arch == 'lstm':
-      self.model = LSTM(input_dim, output_dim, self.batch_size, max_length, num_gpus)
+      self.model = LSTM(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     elif self.arch == 'seq2class':
-      self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, max_length, num_gpus)
+      self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
-    
+ 
+
+  def get_max_length(self):
+    return self.max_length   
+
+
+  def get_batch_size(self):
+    return self.batch_size
+
 
   def make_proto(self, nnet_conf, nnet_proto_file):
     if self.arch in ['dnn', 'bn']:    # currently we use the same function for dnn and bn
@@ -113,14 +122,18 @@ class NNTrainer(object):
 
   def set_gpu(self):
     if self.use_gpu and self.num_gpus != 0:
-      p1 = Popen (['pick-gpu', str(self.num_gpus)], stdout=PIPE)
-      gpu_ids = str(p1.stdout.read())
+      if self.gpu_id == -1:
+        p1 = Popen (['pick-gpu', str(self.num_gpus), str(self.gpu_id)], stdout=PIPE)
+        gpu_ids = str(p1.stdout.read())
+      else:
+        gpu_ids = str(self.gpu_id - 1)
+
       if gpu_ids == "-1":
         if self.wait_gpu:
           logger.info("Waiting for gpus")
           while(gpu_ids == "-1"):
             time.sleep(5)
-            p1 = Popen (['pick-gpu', str(self.num_gpus)], stdout=PIPE)
+            p1 = Popen (['pick-gpu', str(self.num_gpus), str(self.gpu_id)], stdout=PIPE)
             gpu_ids = str(p1.stdout.read())
         else:
           raise RuntimeError("Picking gpu failed")
@@ -264,6 +277,7 @@ class NNTrainer(object):
     # our last window goes till the end of the utterance
     post_pick.append([pick_start, len(feats) - start_index])
 
+    
     # now we need to pad more zeros to fit the place holder, because each place holder can only host [ batch_size x max_length x feat_dim ] this many data
     baches2pad = self.batch_size - len(feats_packed) % self.batch_size
     if baches2pad != 0:
@@ -388,16 +402,14 @@ class NNTrainer(object):
     return posts[0:len(feats),:]
 
 
-  def get_embedding_seq2class(self, feats, vad):
-    embedding = self.model.get_embedding(feats, mask)
-    return embedding
-
-
-  def gen_embedding(self, feats, vad):
+  def gen_embedding(self, feats, mask, embedding_index = 0):
     if self.arch == 'seq2class':
-      embedding = self.get_embedding_seq2class(feats, vad)
+
+      feed_dict = self.model.prep_forward_feed(feats, mask)
+      embeddings = self.sess.run(self.model.get_embedding(embedding_index), feed_dict=feed_dict)
+
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
-    return embedding
+    return embeddings
 
 
