@@ -46,7 +46,11 @@ class FrameDataGenerator:
     else:
       raise RuntimeError("cmvn_type %s not supported" % conf['cmvn_type'])
 
-                  
+    if self.feat_type == 'delta':
+      feat_dim_delta_multiple = 3
+    elif self.feat_type == 'raw':
+      feat_dim_delta_multiple = 1
+    
     if self.feat_type == 'delta':
       cmd.extend(['add-deltas', self.delta_opts, 'ark:-', 'ark:- |'])
     elif self.feat_type in ['lda', 'fmllr']:
@@ -75,7 +79,8 @@ class FrameDataGenerator:
     
     numpy.random.seed(seed)
 
-    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * (2*self.splice+1)
+    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
+                    feat_dim_delta_multiple * (2*self.splice+1)
     self.split_data_counter = 0
     
     self.x = numpy.empty ((0, self.feat_dim))
@@ -128,6 +133,10 @@ class FrameDataGenerator:
         label_list.append (self.labels[uid])
 
     p1.stdout.close()
+    
+    if len(feat_list) == 0 or len(label_list) == 0:
+      raise RuntimeError("No feats are loaded! please check feature and labels are matched.")
+
     return (feat_list, label_list)
 
           
@@ -228,10 +237,17 @@ class UttDataGenerator:
       cmd = ['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
                  'scp:' + self.data + '/cmvn.scp',
                  'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
-    else:
+    elif conf['cmvn_type'] == 'sliding':
       cmd = ['apply-cmvn-sliding', '--norm-vars=false', '--center=true', '--cmn-window=300', 
               'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
+    else:
+      raise RuntimeError('cmvn_type %s not supported' % conf['cmvn_type'])
                   
+    if self.feat_type == 'delta':
+      feat_dim_delta_multiple = 3
+    elif self.feat_type == 'raw':
+      feat_dim_delta_multiple = 1
+    
     if self.feat_type == 'delta':
       cmd.extend(['add-deltas', self.delta_opts, 'ark:-', 'ark:- |'])
     elif self.feat_type in ['lda', 'fmllr']:
@@ -260,7 +276,8 @@ class UttDataGenerator:
     
     numpy.random.seed(seed)
 
-    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * (2*self.splice+1)
+    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
+                    feat_dim_delta_multiple * (2*self.splice+1)
     self.split_data_counter = 0
     
     self.x = numpy.empty ((0, self.max_length, self.feat_dim))
@@ -315,6 +332,10 @@ class UttDataGenerator:
         label_list.append (self.labels[uid])
 
     p1.stdout.close()
+    
+    if len(feat_list) == 0 or len(label_list) == 0:
+      raise RuntimeError("No feats are loaded! please check feature and labels are matched.")
+
     return (feat_list, label_list)
 
           
@@ -476,31 +497,35 @@ class SeqDataGenerator:
     self.min_frames = conf.get('min_frames', 200)
 
     self.loop = loop    # keep looping over dataset
-    self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
+    self.max_split_data_size = 2000 ## These many utterances are loaded into memory at once.
 
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
-    shutil.copyfile(data+'/vad.scp', exp+'/'+name+'.vad.scp')
-
     ## Read number of utterances
-    with open (data + '/utt2spk') as f:
+    with open (self.data + '/feats.%s.scp' % self.name) as f:
       self.num_utts = sum(1 for line in f)
 
-    cmd = "cat %s/feats.scp | utils/shuffle_list.pl --srand %d > %s/shuffle.%s.scp" % (data, seed, exp, self.name)
+    cmd = "cat %s/feats.%s.scp | utils/shuffle_list.pl --srand %d > %s/shuffle.%s.scp" % (self.data, self.name, seed, exp, self.name)
     Popen(cmd, shell=True).communicate()
-
-    cmd = ['apply-cmvn-sliding', '--norm-vars=false', '--center=true', '--cmn-window=300', 
-           'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
                   
-    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.tmp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
+    cmd = ['copy-feats', 'scp:'+exp+'/shuffle.'+self.name+'.scp', 'ark,scp:'+self.tmp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp']
     Popen(' '.join(cmd), shell=True).communicate()
 
+    if self.feat_type == 'delta':
+      feat_dim_delta_multiple = 3
+    elif self.feat_type == 'raw':
+      feat_dim_delta_multiple = 1
+
     if name == 'train':
-      cmd = ['add-deltas', self.delta_opts, '\'scp:head -10000 %s/%s.scp |\'' % (exp, self.name), 'ark:- |']
+      if self.feat_type == 'delta':
+        cmd = ['add-deltas', self.delta_opts, '\'scp:head -10000 %s/%s.scp |\'' % (exp, self.name), 'ark:- |']
+      elif self.feat_type == 'raw':
+        cmd = ['copy-feats', '\'scp:head -10000 %s/%s.scp |\'' % (exp, self.name), 'ark: |']
+      else:
+        raise RuntimeError('feat_type %s not supported' % self.feat_type)
+
       cmd.extend(['splice-feats', '--left-context='+str(self.splice), 
                   '--right-context='+str(self.splice), 'ark:- ark:- |'])
-
-      cmd.extend(['select-voiced-frames', 'ark:-', 'scp:'+data+'/vad.scp', 'ark:- |'])
 
       cmd.extend(['compute-cmvn-stats', 'ark:-', exp+'/cmvn.mat'])
 
@@ -515,7 +540,8 @@ class SeqDataGenerator:
     
     numpy.random.seed(seed)
 
-    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * 3 * (2*self.splice+1)
+    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
+                    feat_dim_delta_multiple * (2*self.splice+1)
     self.split_data_counter = 0
     
     self.x = numpy.empty ((0, self.max_length, self.feat_dim))
@@ -524,9 +550,6 @@ class SeqDataGenerator:
     
     self.batch_pointer = 0
     
-    self.vad_reader = kaldi_io.RandomAccessBaseFloatVectorReader('scp:%s/vad.scp' % self.data)
-
-
   def get_feat_dim(self):
     return self.feat_dim
 
@@ -551,10 +574,17 @@ class SeqDataGenerator:
       feat_list: list of np matrix [num_frames, feat_dim]
       label_list: list of int32 np array [num_frames] 
     '''
+    if self.feat_type == 'delta':
+      cmd = ['add-deltas', self.delta_opts, 
+             'scp:'+self.tmp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp', 
+             'ark:- |']
+    elif self.feat_type == 'raw':
+      cmd = ['copy-feats', 
+             'scp:'+self.tmp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
+             'ark:- |']
+    else:
+      raise RuntimeError("feat type %s not supported" % self.feat_type)
 
-    cmd = ['add-deltas', self.delta_opts, 
-           'scp:'+self.tmp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp', 
-           'ark:- |']
     cmd.extend(['splice-feats', '--left-context='+str(self.splice),
                  '--right-context='+str(self.splice), 'ark:-', 'ark:-|'])
     cmd.extend(['apply-cmvn', '--norm-vars=true', self.exp+'/cmvn.mat', 'ark:-', 'ark:-'])
@@ -563,52 +593,47 @@ class SeqDataGenerator:
 
     feat_list = []
     label_list = []
-    vad_list = []
 
     while True:
       uid, feat = kaldi_IO.read_utterance (p1.stdout)
       if uid == None:
         break;
-      if self.vad_reader.has_key(uid) and uid in self.labels:
+      if uid in self.labels:
         feat_list.append (feat)
         label_list.append (self.labels[uid])
-        vad_list.append(self.vad_reader.value(uid))
 
     p1.stdout.close()
-    return (feat_list, label_list, vad_list)
+
+    if len(feat_list) == 0 or len(label_list) == 0:
+      raise RuntimeError("No feats are loaded! please check feature and labels are matched.")
+
+    return (feat_list, label_list)
 
           
-  def pack_utt_data(self, features, vads):
+  def pack_utt_data(self, features):
     '''
     for each utterance, we pad it into predifined length
     input:
       features: list of np 2d-array [num_frames, feat_dim]
-      vad: list of np array [num_frames]
     output:
       features_pad: np 3d-array [batch_size, max_length, feat_dim]
       labels_pad: np array [batch_size]
       mask: matrix[batch_size, max_length]
     '''
-    assert len(features) == len(vads)
-
     features_pad = []
     mask = []
     max_length = self.max_length
 
-    for feat, vad in zip(features, vads):
-
-      assert len(feat) == len(vad)
-      if vad.sum() <= self.min_frames:
-        continue
+    for feat in features:
 
       if max_length > len(feat) :
         num_zero = max_length - len(feat)
         zeros2pad = numpy.zeros((num_zero, len(feat[0])))
         features_pad.append(numpy.concatenate((feat, zeros2pad)))
-        mask.append(numpy.append(vad, numpy.zeros(num_zero)))
+        mask.append(numpy.append(numpy.ones(len(feat)), numpy.zeros(num_zero)))
       else:
         features_pad.append(feat[:max_length])
-        mask.append(vad[:max_length])
+        mask.append(numpy.ones(max_length))
 
     features_pad = numpy.array(features_pad)
     mask = numpy.array(mask)
@@ -647,8 +672,8 @@ class SeqDataGenerator:
         '''
         return None, None, None
 
-      x, y, vad = self.get_next_split_data()
-      x_pad, mask = self.pack_utt_data(x, vad)
+      x, y = self.get_next_split_data()
+      x_pad, mask = self.pack_utt_data(x)
 
       self.x = numpy.concatenate ((self.x[self.batch_pointer:], x_pad))
       self.y = numpy.append(self.y[self.batch_pointer:], y)
@@ -657,11 +682,12 @@ class SeqDataGenerator:
       self.batch_pointer = 0
 
       ## Shuffle data, utterance base
-      randomInd = numpy.array(range(len(self.x)))
-      numpy.random.shuffle(randomInd)
-      self.x = self.x[randomInd]
-      self.y = self.y[randomInd]
-      self.mask = self.mask[randomInd]
+      # data is already shuffled. we don't need to do that again
+#      randomInd = numpy.array(range(len(self.x)))
+#      numpy.random.shuffle(randomInd)
+#      self.x = self.x[randomInd]
+#      self.y = self.y[randomInd]
+#      self.mask = self.mask[randomInd]
 
       self.split_data_counter += 1
       if self.loop and self.split_data_counter == self.num_split:
