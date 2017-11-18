@@ -48,7 +48,7 @@ class FrameDataGenerator:
 
     if self.feat_type == 'delta':
       feat_dim_delta_multiple = 3
-    elif self.feat_type == 'raw':
+    else:
       feat_dim_delta_multiple = 1
     
     if self.feat_type == 'delta':
@@ -221,7 +221,7 @@ class UttDataGenerator:
     self.delta_opts = conf.get('delta_opts', '')
 
     self.loop = loop    # keep looping over dataset
-    self.max_split_data_size = 200 ## These many utterances are loaded into memory at once.
+    self.max_split_data_size = 2000 ## These many utterances are loaded into memory at once.
 
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
@@ -245,7 +245,7 @@ class UttDataGenerator:
                   
     if self.feat_type == 'delta':
       feat_dim_delta_multiple = 3
-    elif self.feat_type == 'raw':
+    else:
       feat_dim_delta_multiple = 1
     
     if self.feat_type == 'delta':
@@ -494,33 +494,27 @@ class SeqDataGenerator:
     self.max_length = conf.get('max_length', 1000)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
-    self.min_frames = conf.get('min_frames', 200)
 
     self.loop = loop    # keep looping over dataset
-    self.max_split_data_size = 2000 ## These many utterances are loaded into memory at once.
 
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
     ## Read number of utterances
     with open (self.data + '/feats.%s.scp' % self.name) as f:
       self.num_utts = sum(1 for line in f)
-
-    cmd = "cat %s/feats.%s.scp | utils/shuffle_list.pl --srand %d > %s/shuffle.%s.scp" % (self.data, self.name, seed, exp, self.name)
-    Popen(cmd, shell=True).communicate()
-                  
-    cmd = ['copy-feats', 'scp:'+exp+'/shuffle.'+self.name+'.scp', 'ark,scp:'+self.tmp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp']
-    Popen(' '.join(cmd), shell=True).communicate()
+    
+    shutil.copyfile("%s/feats.%s.scp" % (self.data, self.name), "%s/%s.scp" % (self.exp, self.name))
 
     if self.feat_type == 'delta':
       feat_dim_delta_multiple = 3
-    elif self.feat_type == 'raw':
+    else:
       feat_dim_delta_multiple = 1
 
     if name == 'train':
       if self.feat_type == 'delta':
-        cmd = ['add-deltas', self.delta_opts, '\'scp:head -10000 %s/%s.scp |\'' % (exp, self.name), 'ark:- |']
+        cmd = ['add-deltas', self.delta_opts, '\'scp:head -10000 %s/%s.scp |\'' % (self.exp, self.name), 'ark:- |']
       elif self.feat_type == 'raw':
-        cmd = ['copy-feats', '\'scp:head -10000 %s/%s.scp |\'' % (exp, self.name), 'ark: |']
+        cmd = ['copy-feats', '\'scp:head -10000 %s/%s.scp |\'' % (self.exp, self.name), 'ark: |']
       else:
         raise RuntimeError('feat_type %s not supported' % self.feat_type)
 
@@ -531,13 +525,11 @@ class SeqDataGenerator:
 
       Popen(' '.join(cmd), shell=True).communicate()
 
-    self.num_split = int(math.ceil(1.0 * self.num_utts / self.max_split_data_size))
-
+    self.num_split = int(open('%s/num_split.%s' % (self.data, self.name)).read())
+  
     for i in range(self.num_split):
-      split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
-      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.tmp_dir, self.name, i)
-      Popen (split_scp_cmd, shell=True).communicate()
-    
+      shutil.copyfile("%s/feats.%s.%d.scp" % (self.data, self.name, (i+1)), "%s/split.%s.%d.scp" % (self.tmp_dir, self.name, i))
+
     numpy.random.seed(seed)
 
     self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
