@@ -55,15 +55,20 @@ for f in $nnetdir/$model_name $data/feats.scp; do
   [ ! -f $f ] && echo "$0: no such file $f" && exit 1;
 done
 
-if $use_gpu; then  gpu_opts='--use-gpu'; fi
+if $use_gpu; then  gpu_opts='--use-gpu --gpu-id JOB'; fi
 
 if [ $stage -le 0 ]; then
   $cmd $tc_args JOB=1:$nj $dir/log/extract_xvectors.JOB.log \
-    python steps_tf/nnet_gen_embedding.py $gpu_opts \
+    python steps_tf/nnet_gen_embedding.py $gpu_opts --verbose \
     $sdata/JOB $nnetdir/$model_name ark,scp:$dir/xvector.JOB.ark,$dir/xvector.JOB.scp
 fi
 
 if [ $stage -le 1 ]; then
+  echo "$0: combining xvectors across jobs"
+  for j in $(seq $nj); do cat $dir/xvector.$j.scp; done > $dir/xvector.scp
+fi
+
+if [ $stage -le 2 ]; then
   # Be careful here: the speaker-level iVectors are now length-normalized,
   # even if they are otherwise the same as the utterance-level ones.
   echo "$0: computing mean of iVectors for each speaker and length-normalizing"
