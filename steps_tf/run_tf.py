@@ -122,10 +122,8 @@ mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):
   mlp_best = open(exp+'/.mlp_best').read().strip()
-  logger.info("loading model from %s", mlp_best)
   nnet.read(mlp_best)
 elif os.path.isfile(mlp_init+'.index'):
-  logger.info("loading model from %s", mlp_init)
   nnet.read(mlp_init)
   mlp_best = mlp_init
 else:
