@@ -23,6 +23,9 @@ def affine_transform(info, layer_in):
                             initializer = truncated_normal_initializer)
   biases = tf.get_variable(name = 'biases', shape = [output_dim], 
                            initializer = random_uniform_initializer)
+  
+  tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, weights)
+  tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, biases)
 
   if len(layer_in.get_shape()) == 2:
     layer_out = tf.matmul(layer_in, weights) + biases
@@ -47,6 +50,8 @@ def linear_transform(info, layer_in):
   truncated_normal_initializer = tf.truncated_normal_initializer(mean = 0, stddev = stddev)
   weights = tf.get_variable(name = 'weights', shape = [input_dim, output_dim],
                             initializer = truncated_normal_initializer)
+  
+  tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, weights)
 
   layer_out = tf.matmul(layer_in, weights)
 
@@ -66,6 +71,8 @@ def affine_batch_normalization(info, layer_in):
   truncated_normal_initializer = tf.truncated_normal_initializer(mean = 0, stddev = stddev)
   weights = tf.get_variable(name = 'weights', shape = [input_dim, output_dim],
                             initializer = truncated_normal_initializer)
+
+  tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, weights)
   
   if len(layer_in.get_shape()) == 2:
     z = tf.matmul(layer_in, weights)
@@ -158,7 +165,7 @@ def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False
   return layer_out
 
 
-def pooling(info, layer_in, mask):
+def pooling(info, layer_in, mask, reuse = False):
   '''
   layer_in: 3-d np array of size [num_batch, max_length, hidden_dim]
   mask: 2-d np array of size [num_batch, max_length]
