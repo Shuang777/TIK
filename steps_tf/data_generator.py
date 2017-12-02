@@ -135,7 +135,7 @@ class FrameDataGenerator:
     p1.stdout.close()
     
     if len(feat_list) == 0 or len(label_list) == 0:
-      raise RuntimeError("No feats are loaded! please check feature and labels are matched.")
+      raise RuntimeError("No feats are loaded! please check feature and labels, and make sure they are matched.")
 
     return (feat_list, label_list)
 
@@ -334,7 +334,7 @@ class UttDataGenerator:
     p1.stdout.close()
     
     if len(feat_list) == 0 or len(label_list) == 0:
-      raise RuntimeError("No feats are loaded! please check feature and labels are matched.")
+      raise RuntimeError("No feats are loaded! please check feature and labels, and make sure they are matched.")
 
     return (feat_list, label_list)
 
@@ -597,7 +597,7 @@ class SeqDataGenerator:
     p1.stdout.close()
 
     if len(feat_list) == 0 or len(label_list) == 0:
-      raise RuntimeError("No feats are loaded! please check feature and labels are matched.")
+      raise RuntimeError("No feats are loaded! please check feature and labels, and make sure they are matched.")
 
     return (feat_list, label_list)
 
@@ -646,6 +646,7 @@ class SeqDataGenerator:
         # not loop mode and we arrive the end, do not read anymore
         '''
         # to complete this, we need to modify self.acc and self.loss and add one more mask; too complicated
+        # let's just throw away the last few samples
         if self.batch_pointer < len(self.x):
           # last batch, need to pad to batches
           num_zero = self.batch_size - (len(self.x) - self.batch_pointer)
