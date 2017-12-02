@@ -82,11 +82,12 @@ if [ ! -z $transform_dir ]; then
   fi
 fi
 
-if $use_gpu; then  gpu_opts='--use-gpu'; fi
+if $use_gpu; then  gpu_opts="--use-gpu --gpu-id JOB"; fi
 
 if [ $stage -le 0 ]; then
   $cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
-    python steps_tf/nnet_forward.py $gpu_opts --no-softmax --prior-counts $srcdir/ali_train_pdf.counts \
+    python steps_tf/nnet_forward.py $gpu_opts --no-softmax \
+    --prior-counts $srcdir/ali_train_pdf.counts \
     --transform $transform_dir/$trans $sdata/JOB $srcdir/$model_name  \| \
     latgen-faster-mapped --max-active=$max_active --beam=$beam --lattice-beam=$latbeam \
     --acoustic-scale=$acwt --allow-partial=true --word-symbol-table=$graphdir/words.txt \
