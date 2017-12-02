@@ -66,6 +66,7 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
   nnet_proto = open(nnet_proto_file, 'w')
   num_hid_layers = conf['num_hidden_layers']
   num_hid_neurons = conf['hidden_units']
+  num_pooling_neurons = conf.get('pooling_units', num_hid_neurons)
   with_glorot = conf.get('with_glorot', True)
   
   #Use batch normalization after nonlin
@@ -94,13 +95,15 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
 
   for i in range(num_hid_layers):
     layer_in_dim = feat_dim if (i == 0) else num_hid_neurons
-    layer_out_dim = num_hid_neurons
+    layer_out_dim = num_hid_neurons if (i != num_hid_layers-1) else num_pooling_neurons
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
       (affine_layer, layer_in_dim, layer_out_dim, hid_bias_mean, hid_bias_range, \
        (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
-    nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], num_hid_neurons, num_hid_neurons))
+    nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], layer_out_dim, layer_out_dim))
     if batch_norm:
-      nnet_proto.write("<BatchNormalization> <InputDim> %d <OutputDim> %d\n" % (num_hid_neurons, num_hid_neurons))
+      nnet_proto.write("<BatchNormalization> <InputDim> %d <OutputDim> %d\n" % (layer_out_dim, layer_out_dim))
+    nnet_proto.write("<Dropout> keep_prob\n")
+    
 
   use_std = conf.get('use_std', False)
   layer_in_dim = layer_out_dim
@@ -119,6 +122,7 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], layer_out_dim, layer_out_dim))
     if batch_norm:
       nnet_proto.write("<BatchNormalization> <InputDim> %d <OutputDim> %d\n" % (layer_out_dim, layer_out_dim))
+    nnet_proto.write("<Dropout> keep_prob\n")
 
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
     (affine_layer, layer_out_dim, output_dim, 0.0, 0.0, \
