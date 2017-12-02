@@ -12,11 +12,12 @@ def parse(config_tuple):
     if i in ['min_iters', 'keep_lr_iters', 'max_iters', 'context_width', 
              'batch_size', 'hidden_units', 'num_hidden_layers', 'num_cells',
              'max_length', 'sliding_window', 'jitter_window', 'bottleneck_dim',
-             'num_iters', 'num_gpus', 'num_hidden_layers_after_bn', 'num_proj']:
+             'num_iters', 'num_gpus', 'num_hidden_layers_after_bn', 'num_proj',
+             'pooling_units']:
       config_parsed[i] = int(config_dict[i])
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
                'initial_learning_rate', 'final_learning_rate', 'momentum', 
-               'keep_prob', 'keep_in_prob', 'keep_out_prob']:
+               'keep_prob', 'keep_in_prob', 'keep_out_prob', 'beta']:
       config_parsed[i] = float(config_dict[i])
     elif i in ['batch_norm', 'affine_batch_norm', 'with_softmax', 'use_peepholes', 
                'clip_gradients', 'use_std']:
