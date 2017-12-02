@@ -45,7 +45,7 @@ def placeholder_seq2class(input_dim, max_length, batch_size):
   return feats_holder, mask_holder, labels_holder
 
 
-def inference_dnn(feats_holder, nnet_proto_file, reuse = False):
+def inference_dnn(feats_holder, nnet_proto_file, keep_prob_holder = None, reuse = False):
   '''
   args:
     feats_holder: np 2-d array of size [num_batch, feat_dim]
@@ -63,7 +63,7 @@ def inference_dnn(feats_holder, nnet_proto_file, reuse = False):
     if line == '</NnetProto>':
       break
     with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
-      layer_out = build_layer(line, layer_in, reuse = reuse)
+      layer_out = build_layer(line, layer_in, keep_prob = keep_prob_holder, reuse = reuse)
       layer_in = layer_out
       count_layer += 1
   logits = layer_out
@@ -166,13 +166,13 @@ def inference_seq2class(feats_holder, mask_holder, nnet_proto_file,
     if line.startswith('<Pooling>'):
       break
     with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
-      layer_out = build_layer(line, layer_in)
+      layer_out = build_layer(line, layer_in, keep_prob = keep_prob_holder)
       layer_in = layer_out
       count_layer += 1
 
   # pooling layer
   with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
-    layer_out = build_layer(line, layer_in, mask_holder = mask_holder)
+    layer_out = build_layer(line, layer_in, mask_holder = mask_holder, reuse = reuse)
     layer_in = layer_out
     count_layer += 1
 
@@ -183,10 +183,10 @@ def inference_seq2class(feats_holder, mask_holder, nnet_proto_file,
     if line == '</NnetProto>':
       break
     with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
-      layer_out = build_layer(line, layer_in)
+      layer_out = build_layer(line, layer_in, keep_prob = keep_prob_holder)
       layer_in = layer_out
       count_layer += 1
-      if line.startswith('<Sigmoid>') or line.startswith('<Relu6'):
+      if line.startswith('<AffineTransform>'):
         embeddings.append(layer_out)
 
   logits = layer_out
@@ -194,11 +194,12 @@ def inference_seq2class(feats_holder, mask_holder, nnet_proto_file,
 
 
 def build_layer(line, layer_in, seq_length = None, mask_holder = None,
-                keep_in_prob = None, keep_out_prob = None, reuse = False):
+                keep_in_prob = None, keep_out_prob = None, keep_prob = None,
+                reuse = False):
   layer_type, info = line.split(' ', 1)
   if layer_type == '<AffineTransform>':
     layer_out = layer.affine_transform(info, layer_in)
-  if layer_type == '<LinearTransform>':
+  elif layer_type == '<LinearTransform>':
     layer_out = layer.linear_transform(info, layer_in)
   elif layer_type == '<BatchNormalization>':
     layer_out = layer.batch_normalization(info, layer_in)
@@ -215,13 +216,15 @@ def build_layer(line, layer_in, seq_length = None, mask_holder = None,
   elif layer_type == '<Softmax>':
     layer_out = tf.nn.softmax(layer_in)
   elif layer_type == '<Dropout>':
-    layer_out = tf.nn.dropout(layer_in, float(info))
+    layer_out = tf.nn.dropout(layer_in, keep_prob)
   elif layer_type == '<LSTM>':
     layer_out = layer.lstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = reuse)
   elif layer_type == '<BLSTM>':
     layer_out = layer.blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = reuse)
   elif layer_type == '<Pooling>':
-    layer_out = layer.pooling(info, layer_in, mask_holder)
+    layer_out = layer.pooling(info, layer_in, mask_holder, reuse = reuse)
+  else:
+    raise RuntimeError("layer_type %s not supported" % layer_type)
 
   return layer_out
 
