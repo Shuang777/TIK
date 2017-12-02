@@ -35,18 +35,56 @@ class SEQ2CLASS(object):
                                                            self.batch_size)
       
       keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
+      beta_holder = tf.placeholder(tf.float32, shape=[], name = 'beta')
+
+      logits, embeddings = nnet.inference_seq2class(feats_holder, 
+                                                mask_holder, nnet_proto_file, 
+                                                keep_prob_holder)
+
+      outputs = tf.nn.softmax(logits)
+
+      tf.add_to_collection('feats_holder', feats_holder)
+      tf.add_to_collection('labels_holder', labels_holder)
+      tf.add_to_collection('mask_holder', mask_holder)
+      tf.add_to_collection('keep_prob_holder', keep_prob_holder)
+      tf.add_to_collection('beta_holder', beta_holder)
+      tf.add_to_collection('logits', logits)
+      tf.add_to_collection('outputs', outputs)
+      for i in range(len(embeddings)):
+        tf.add_to_collection('embeddings', embeddings[i])
+
+      self.feats_holder = feats_holder
+      self.labels_holder = labels_holder
+      self.mask_holder = mask_holder
+      self.keep_prob_holder = keep_prob_holder
+      self.beta_holder = beta_holder
+      self.logits = logits
+      self.outputs = outputs
+      self.embeddings = embeddings
+      
+      self.init_all_op = tf.global_variables_initializer()
+
+
+  def init_seq2class_multi(self, graph, nnet_proto_file, seed):
+    with graph.as_default(), tf.device('/cpu:0'):
+      tf.set_random_seed(seed)
+      feats_holder, mask_holder, labels_holder = nnet.placeholder_seq2class(self.input_dim, 
+                                                           self.max_length,
+                                                           self.batch_size*self.num_towers)
+      
+      keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
 
       logits, embeddings = nnet.inference_seq2class(feats_holder, mask_holder, nnet_proto_file, 
                                         keep_prob_holder)
 
       outputs = tf.nn.softmax(logits)
 
-      tf.add_to_collection('logits', logits)
-      tf.add_to_collection('outputs', outputs)
       tf.add_to_collection('feats_holder', feats_holder)
       tf.add_to_collection('labels_holder', labels_holder)
       tf.add_to_collection('mask_holder', mask_holder)
       tf.add_to_collection('keep_prob_holder', keep_prob_holder)
+      tf.add_to_collection('logits', logits)
+      tf.add_to_collection('outputs', outputs)
       for i in range(len(embeddings)):
         tf.add_to_collection('embeddings', embeddings[i])
 
@@ -55,46 +93,8 @@ class SEQ2CLASS(object):
       self.mask_holder = mask_holder
       self.keep_prob_holder = keep_prob_holder
       self.logits = logits
+      self.outputs = outputs
       self.embeddings = embeddings
-      self.outputs = outputs
-      
-      self.init_all_op = tf.global_variables_initializer()
-
-
-  def init_seq2class_multi(self, graph, nnet_proto_file, seed):
-    with graph.as_default(), tf.device('/cpu:0'):
-
-      feats_holder, seq_length_holder, \
-        mask_holder, labels_holder = nnet.placeholder_lstm(
-                                         self.input_dim,
-                                         self.max_length,
-                                         self.batch_size*self.num_towers)
-      
-      keep_in_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_in_prob')
-      keep_out_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_out_prob')
-
-      logits = nnet.inference_lstm(feats_holder, seq_length_holder, nnet_proto_file,
-                                   keep_in_prob_holder, keep_out_prob_holder)
-
-      outputs = tf.nn.softmax(logits)
-
-      tf.add_to_collection('logits', logits)
-      tf.add_to_collection('outputs', outputs)
-      tf.add_to_collection('feats_holder', feats_holder)
-      tf.add_to_collection('labels_holder', labels_holder)
-      tf.add_to_collection('seq_length_holder', seq_length_holder)
-      tf.add_to_collection('mask_holder', mask_holder)
-      tf.add_to_collection('keep_in_prob_holder', keep_in_prob_holder)
-      tf.add_to_collection('keep_out_prob_holder', keep_out_prob_holder)
-
-      self.feats_holder = feats_holder
-      self.labels_holder = labels_holder
-      self.seq_length_holder = seq_length_holder
-      self.mask_holder = mask_holder
-      self.keep_in_prob_holder = keep_in_prob_holder
-      self.keep_out_prob_holder = keep_out_prob_holder
-      self.logits = logits
-      self.outputs = outputs
 
       self.tower_logits = []
       self.tower_outputs = []
@@ -106,11 +106,11 @@ class SEQ2CLASS(object):
             tower_end_index = (i+1) * self.batch_size
 
             tower_feats_holder = feats_holder[tower_start_index:tower_end_index,:,:]
-            tower_seq_length_holder = seq_length_holder[tower_start_index:tower_end_index]
+            tower_mask_holder = mask_holder[tower_start_index:tower_end_index]
 
-            tower_logits = nnet.inference_lstm(tower_feats_holder, tower_seq_length_holder, 
-                                               nnet_proto_file, keep_in_prob_holder, 
-                                               keep_out_prob_holder, reuse = True)
+            tower_logits, embeddings = nnet.inference_seq2class(tower_feats_holder,
+                                              tower_mask_holder, nnet_proto_file, 
+                                              keep_prob_holder, reuse = True)
 
             tower_outputs = tf.nn.softmax(tower_logits)
 
@@ -140,6 +140,10 @@ class SEQ2CLASS(object):
     self.labels_holder = graph.get_collection('labels_holder')[0]
     self.mask_holder = graph.get_collection('mask_holder')[0]
     self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
+    if graph.get_collection('beta_holder'):
+      self.beta_holder = graph.get_collection('beta_holder')[0]
+    else:
+      self.beta_holder = None
     self.logits = graph.get_collection('logits')[0]
     self.outputs = graph.get_collection('outputs')[0]
     self.embeddings = []
@@ -147,15 +151,17 @@ class SEQ2CLASS(object):
       self.embeddings.append(graph.get_collection('embeddings')[i])
 
   
-  def read_lstm_multi(self, graph, load_towers):
+  def read_seq2class_multi(self, graph, load_towers):
     self.feats_holder = graph.get_collection('feats_holder')[0]
     self.labels_holder = graph.get_collection('labels_holder')[0]
-    self.seq_length_holder = graph.get_collection('seq_length_holder')[0]
     self.mask_holder = graph.get_collection('mask_holder')[0]
-    self.keep_in_prob_holder = graph.get_collection('keep_in_prob_holder')[0]
-    self.keep_out_prob_holder = graph.get_collection('keep_out_prob_holder')[0]
+    self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
+    self.beta_holder = graph.get_collection('beta_holder')[0]
     self.logits = graph.get_collection('logits')[0]
     self.outputs = graph.get_collection('outputs')[0]
+    self.embeddings = []
+    for i in range(len(graph.get_collection('embeddings'))):
+      self.embeddings.append(graph.get_collection('embeddings')[i])
 
     self.tower_logits = []
     self.tower_outputs = []
@@ -185,6 +191,13 @@ class SEQ2CLASS(object):
 
       loss = nnet.loss_dnn(self.logits, self.labels_holder)
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
+
+      # add reguarlization
+      regularizer = tf.contrib.layers.l2_regularizer(scale = self.beta_holder)
+      reg_variables = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+      reg_term = tf.contrib.layers.apply_regularization(regularizer, reg_variables)
+      loss += reg_term
+
       opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
       grads = nnet.get_gradients(opt, loss)
       train_op = nnet.apply_gradients(optimizer_conf, opt, grads)
@@ -223,14 +236,13 @@ class SEQ2CLASS(object):
             tower_start_index = i*self.batch_size
             tower_end_index = (i+1)*self.batch_size
 
-            tower_mask_holder = self.mask_holder[tower_start_index:tower_end_index,:]
-            tower_labels_holder = self.labels_holder[tower_start_index:tower_end_index,:]
+            tower_labels_holder = self.labels_holder[tower_start_index:tower_end_index]
 
-            loss = nnet.loss_lstm(self.tower_logits[i], tower_labels_holder, tower_mask_holder)
+            loss = nnet.loss_dnn(self.tower_logits[i], tower_labels_holder)
             tower_losses.append(loss)
             grads = nnet.get_gradients(opt, loss)
             tower_grads.append(grads)
-            eval_acc = nnet.evaluation_lstm(self.tower_logits[i], tower_labels_holder, tower_mask_holder)
+            eval_acc = nnet.evaluation_dnn(self.tower_logits[i], tower_labels_holder)
             tower_accs.append(eval_acc)
 
       grads = nnet.average_gradients(tower_grads)
@@ -279,14 +291,21 @@ class SEQ2CLASS(object):
     return self.embeddings[index]
 
 
-  def prep_feed(self, data_gen, learning_rate, keep_in_prob = None, keep_out_prob = None):
+  def prep_feed(self, data_gen, train_params):
 
     x, y, mask = data_gen.get_batch_utterances()
 
     feed_dict = { self.feats_holder: x,
                   self.labels_holder: y,
                   self.mask_holder: mask,
-                  self.learning_rate_holder: learning_rate}
+                  self.keep_prob_holder: 1.0,
+                  self.beta_holder: 0.0} 
+    
+    if train_params is not None:
+      feed_dict.update({
+                  self.learning_rate_holder: train_params['learning_rate'],
+                  self.keep_prob_holder: train_params.get('keep_prob', 1.0),
+                  self.beta_holder: train_params.get('beta', 0.0)})
 
     return feed_dict, x is not None
 

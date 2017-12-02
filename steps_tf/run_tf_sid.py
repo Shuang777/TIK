@@ -99,10 +99,8 @@ mlp_init = exp+'/model.init'
 
 if os.path.isfile(exp+'/.mlp_best'):
   mlp_best = open(exp+'/.mlp_best').read()
-  logger.info("loading model from %s", mlp_best)
   nnet.read(mlp_best)
 elif os.path.isfile(mlp_init+'.index'):
-  logger.info("loading model from %s", mlp_init)
   nnet.read(mlp_init)
   mlp_best = mlp_init
 else:
@@ -139,7 +137,7 @@ else:
 
 logger.info("### neural net training started at %s", datetime.datetime.today())
 
-loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, keep_acc = True)
+loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, None)
 logger.info("ITERATION 0: loss on cv %.3f, acc_cv %s", loss, acc)
 
 
@@ -153,13 +151,11 @@ for i in range(max_iters):
     logger.info("%s skipping... %s trained", log_info, iter_model)
     continue
 
-  loss_tr, acc_tr = nnet.iter_data(exp+'/log/iter%02d.tr.log'%(i+1), tr_gen, 
-                                   learning_rate = current_lr,
-                                   keep_in_prob = nnet_train_conf.get('keep_in_prob', 1.0),
-                                   keep_out_prob = nnet_train_conf.get('keep_out_prob', 1.0))
+  nnet_train_conf.update({'learning_rate': current_lr})
 
-  loss_cv, acc_cv = nnet.iter_data(exp+'/log/iter%02d.cv.log'%(i+1), cv_gen, 
-                                   keep_acc = True)
+  loss_tr, acc_tr = nnet.iter_data(exp+'/log/iter%02d.tr.log'%(i+1), tr_gen, nnet_train_conf)
+
+  loss_cv, acc_cv = nnet.iter_data(exp+'/log/iter%02d.cv.log'%(i+1), cv_gen, None)
 
   loss_prev = loss
 

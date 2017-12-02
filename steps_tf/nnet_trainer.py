@@ -165,9 +165,8 @@ class NNTrainer(object):
     self.sess.run(self.model.get_init_train_op())
 
  
-  def iter_data(self, logfile, train_gen, learning_rate = None, keep_acc = False, 
-                keep_in_prob = 1.0, keep_out_prob = 1.0):
-    '''Train/test one iteration; use learning_rate == None to specify test mode'''
+  def iter_data(self, logfile, train_gen, train_params):
+    '''Train/test one iteration; use train_params == None to specify test mode'''
 
     assert self.batch_size*self.num_gpus == train_gen.get_batch_size()
 
@@ -185,14 +184,13 @@ class NNTrainer(object):
 
     while(True):
 
-      feed_dict, has_data = self.model.prep_feed(train_gen, learning_rate,
-                                                 keep_in_prob = keep_in_prob,
-                                                 keep_out_prob = keep_out_prob)
+      feed_dict, has_data = self.model.prep_feed(train_gen, train_params)
+                                                 
 
       if not has_data:   # no more data for training
         break
 
-      if learning_rate is None:
+      if train_params is None:
         loss = self.sess.run(self.model.get_loss(), feed_dict = feed_dict)
       else:
         _, loss = self.sess.run([self.model.get_train_op(), self.model.get_loss()], feed_dict = feed_dict)
@@ -203,7 +201,7 @@ class NNTrainer(object):
       duration = time.time() - start_time
       count_steps += 1
 
-      if keep_acc or count_steps % 10 == 0 or count_steps == 1:
+      if train_params is None or count_steps % 50 == 0 or count_steps == 1:
         acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
         sum_accs += 1.0 * acc
         sum_acc_counts += 1.0 * train_gen.get_last_batch_counts()
