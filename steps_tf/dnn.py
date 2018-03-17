@@ -119,6 +119,7 @@ class DNN(object):
     ''' read graph from file '''
     self.feats_holder = graph.get_collection('feats_holder')[0]
     self.labels_holder = graph.get_collection('labels_holder')[0]
+    self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
     self.logits = graph.get_collection('logits')[0]
     self.outputs = graph.get_collection('outputs')[0]
 
@@ -127,6 +128,7 @@ class DNN(object):
     ''' read graph from file '''
     self.feats_holder = graph.get_collection('feats_holder')[0]
     self.labels_holder = graph.get_collection('labels_holder')[0]
+    self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
     self.logits = graph.get_collection('logits')[0]
     self.outputs = graph.get_collection('outputs')[0]
   
@@ -141,7 +143,7 @@ class DNN(object):
         self.tower_outputs.append(tower_outputs)
 
 
-  def init_training(self, graph, optimizer_conf):
+  def init_training(self, graph, optimizer_conf, learning_rate = None):
     if self.num_towers == 1:
       self.init_training_dnn_single(graph, optimizer_conf)
     else:
