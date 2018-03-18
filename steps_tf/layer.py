@@ -40,6 +40,41 @@ def affine_transform(info, layer_in):
   return layer_out
 
 
+def tdnn_affine_transform(info, layer_in):
+  info_dict = info2dict(info)
+  
+  input_dim = int(info_dict['<InputDim>'])
+  output_dim = int(info_dict['<OutputDim>'])
+  splices = [ int(x) for x in info_dict['<Splice>'].split(':') ]
+  num_splices = len(splices)
+  stddev = float(info_dict['<ParamStddev>'])
+  minval = float(info_dict['<BiasMean>']) - float(info_dict['<BiasRange>'])/2
+  maxval = float(info_dict['<BiasMean>']) + float(info_dict['<BiasRange>'])/2
+
+  truncated_normal_initializer = tf.truncated_normal_initializer(mean = 0, stddev = stddev)
+  random_uniform_initializer = tf.random_uniform_initializer(minval = minval, maxval = maxval)
+
+  weights = tf.get_variable(name = 'weights', shape = [input_dim*num_splices, output_dim],
+                            initializer = truncated_normal_initializer)
+  biases = tf.get_variable(name = 'biases', shape = [output_dim], 
+                           initializer = random_uniform_initializer)
+  
+  tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, weights)
+  tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, biases)
+
+  if len(layer_in.get_shape()) == 2:
+    layer_out = tf.matmul(layer_in, weights) + biases
+  elif len(layer_in.get_shape()) == 3:   # this is of size [num_batch, num_frame, feat_dim]
+    batch_size, max_length = layer_in.get_shape()[:2]
+    layer_out = tf.reshape(layer_in, [-1, input_dim])
+    layer_out = tf.matmul(layer_out, weights) + biases
+    layer_out = tf.reshape(layer_out, [int(batch_size), -1, output_dim])
+  else:
+    raise RuntimeError("affine_transform: does not support layer_in of shape %s" % layer_in.get_shape())
+
+  return layer_out
+
+
 def linear_transform(info, layer_in):
   info_dict = info2dict(info)
   
