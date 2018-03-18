@@ -9,20 +9,13 @@ nj=10
 tc_args=
 cmd=run.pl
 
-srcdir=
 transform_dir=
-
-max_active=7000 # max-active
-beam=13.0 # beam used
-latbeam=8.0 # beam used in getting lattices
-acwt=0.08333 # acoustic weight used in getting lattices
-scoring_opts=
-skip_scoring=false
 
 splice_opts=
 norm_vars=
 add_deltas=
 
+use_gpu=false
 model_name=final.model.txt
 # End configuration
 
@@ -47,33 +40,32 @@ data=$1
 tgtdir=$2
 dir=$3
 
-[ -z $srcdir ] && srcdir=`dirname $dir`;
 sdata=$data/split$nj;
 
 mkdir -p $dir/log
 
 [[ -d $sdata && $data/feats.scp -ot $sdata ]] || split_data.sh $utt_opts $data $nj
 
-if [ $stage -le 0 ]; then
 ## Set up the features
-  cmds="apply-cmvn --utt2spk=ark:$sdata/JOB/utt2spk scp:$sdata/JOB/cmvn.scp scp:$sdata/JOB/feats.scp ark:- |"
-  cmds="$cmds splice-feats $splice_opts ark:- ark:- |"
-  cmds="$cmds transform-feats $srcdir/final.mat ark:- ark:- |"
-  if [ ! -z "$transform_dir" ]; then
-    nj_orig=$(cat $transform_dir/num_jobs)
-    if [ $nj_orig != $nj ]; then
-      for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
-        copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
-      cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$dir/trans.ark ark:- ark:- |"
-    else
-      cmds="$cmds transform-feats --utt2spk=ark:$sdata/JOB/utt2spk ark:$transform_dir/trans.JOB ark:- ark:- |"
-    fi
+if [ ! -z "$transform_dir" ]; then
+  nj_orig=$(cat $transform_dir/num_jobs)
+  if [ $nj_orig -eq $nj ]; then
+    trans=trans.JOB
+  else
+    for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
+      copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
+    trans=trans.ark
   fi
-  
-  utils/copy_data_dir.sh $data $tgtdir
+fi
 
+utils/copy_data_dir.sh $data $tgtdir
+
+if $use_gpu; then  gpu_opts="--use-gpu --gpu-id JOB"; fi
+
+if [ $stage -le 0 ]; then
   $cmd $tc_args JOB=1:$nj $dir/log/gen_bn.JOB.log \
-    $cmds python3 steps_tf/nnet_forward.py $srcdir/config $srcdir/$model_name \| \
+    python steps_tf/nnet_forward.py $gpu_opts --no-softmax \
+    --transform $transform_dir/$trans $sdata/JOB $dir/$model_name \| \
     copy-feats ark:- ark,scp:`pwd`/$dir/bn_feats.JOB.ark,$dir/bn_feats.JOB.scp
 
   for i in `seq $nj`; do

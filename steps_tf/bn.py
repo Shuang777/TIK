@@ -33,18 +33,21 @@ class BN(object):
     with graph.as_default():
       tf.set_random_seed(seed)
       feats_holder, labels_holder = nnet.placeholder_dnn(self.input_dim, self.batch_size)
+      keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
       
-      logits, bn_outputs = nnet.inference_bn(feats_holder, nnet_proto_file)
+      logits, bn_outputs = nnet.inference_bn(feats_holder, nnet_proto_file, keep_prob_holder)
       outputs = tf.nn.softmax(logits)
 
       tf.add_to_collection('feats_holder', feats_holder)
       tf.add_to_collection('labels_holder', labels_holder)
+      tf.add_to_collection('keep_prob_holder', keep_prob_holder)
       tf.add_to_collection('logits', logits)
       tf.add_to_collection('outputs', outputs)
       tf.add_to_collection('bn_outputs', bn_outputs)
     
       self.feats_holder = feats_holder
       self.labels_holder = labels_holder
+      self.keep_prob_holder = keep_prob_holder
       self.logits = logits
       self.outputs = outputs
       self.bn_outputs = bn_outputs
@@ -60,17 +63,21 @@ class BN(object):
                                       self.input_dim, 
                                       self.batch_size * self.num_towers)
       
-      logits, bn_outputs = nnet.inference_bn(feats_holder, nnet_proto_file)
+      keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
+      
+      logits, bn_outputs = nnet.inference_bn(feats_holder, nnet_proto_file, keep_prob_holder)
       outputs = tf.nn.softmax(logits)
 
       tf.add_to_collection('feats_holder', feats_holder)
       tf.add_to_collection('labels_holder', labels_holder)
+      tf.add_to_collection('keep_prob_holder', keep_prob_holder)
       tf.add_to_collection('logits', logits)
       tf.add_to_collection('outputs', outputs)
       tf.add_to_collection('bn_outputs', bn_outputs)
 
       self.feats_holder = feats_holder
       self.labels_holder = labels_holder
+      self.keep_prob_holder = keep_prob_holder
       self.logits = logits
       self.outputs = outputs
       self.bn_outputs = bn_outputs
@@ -85,7 +92,7 @@ class BN(object):
             tower_end_index = (i+1) * self.batch_size
 
             tower_feats_holder = feats_holder[tower_start_index:tower_end_index,:]
-            tower_logits, tower_bn = nnet.inference_bn(tower_feats_holder, nnet_proto_file, reuse = True)
+            tower_logits, tower_bn = nnet.inference_bn(tower_feats_holder, nnet_proto_file, keep_prob_holder, reuse = True)
             tower_outputs = tf.nn.softmax(tower_logits)
 
             self.tower_logits.append(tower_logits)
@@ -138,7 +145,7 @@ class BN(object):
         self.tower_outputs.append(tower_outputs)
 
 
-  def init_training(self, graph, optimizer_conf):
+  def init_training(self, graph, optimizer_conf, learning_rate = None):
     if self.num_towers == 1:
       self.init_training_bn_single(graph, optimizer_conf)
     else:
@@ -211,12 +218,19 @@ class BN(object):
     return self.train_op
 
 
-  def prep_feed(self, x, y, learning_rate):
+  def prep_feed(self, data_gen, train_params):
+    x, y = data_gen.get_batch_frames()
+
     feed_dict = { self.feats_holder: x,
                   self.labels_holder: y,
-                  self.learning_rate_holder: learning_rate}
+                  self.keep_prob_holder: 1.0}
 
-    return feed_dict
+    if train_params is not None:
+      feed_dict.update({
+                  self.learning_rate_holder: train_params['learning_rate'],
+                  self.keep_prob_holder: 1.0})
+
+    return feed_dict, x is not None
 
   
   def prep_forward_feed(self, x):
