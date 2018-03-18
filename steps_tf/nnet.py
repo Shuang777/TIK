@@ -70,7 +70,7 @@ def inference_dnn(feats_holder, nnet_proto_file, keep_prob_holder = None, reuse 
   return logits
 
 
-def inference_bn(feats_holder, nnet_proto_file, reuse = False):
+def inference_bn(feats_holder, nnet_proto_file, keep_prob_holder = None, reuse = False):
   '''
   args:
     feats_holder: np 2-d array of size [num_batch, feat_dim]
@@ -95,7 +95,7 @@ def inference_bn(feats_holder, nnet_proto_file, reuse = False):
       is_bn_layer = False
       continue
     with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
-      layer_out = build_layer(line, layer_in, reuse = reuse)
+      layer_out = build_layer(line, layer_in, keep_prob = keep_prob_holder, reuse = reuse)
       layer_in = layer_out
       count_layer += 1
       if is_bn_layer:
@@ -205,6 +205,8 @@ def build_layer(line, layer_in, seq_length = None, mask_holder = None,
     layer_out = layer.batch_normalization(info, layer_in)
   elif layer_type == '<AffineBatchNormalization>':
     layer_out = layer.affine_batch_normalization(info, layer_in)
+  elif layer_type == '<TDNNAffineTransform>':
+    layer_out = layer.tdnn_affine_transform(info, layer_in)
   elif layer_type == '<Sigmoid>':
     layer_out = tf.sigmoid(layer_in)
   elif layer_type == '<Relu>':
@@ -260,7 +262,7 @@ def loss_lstm(logits, labels, mask):
 
 
 def prep_optimizer(op_conf, learning_rate_holder):
-  ''' learning_rate is a place holder
+  ''' learning_rate is a place holder, or a tensor
   loss is output of logits
   '''
   if op_conf['op_type'] in ['SGD', 'sgd']:

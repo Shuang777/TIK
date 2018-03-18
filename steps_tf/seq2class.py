@@ -174,14 +174,14 @@ class SEQ2CLASS(object):
         self.tower_outputs.append(tower_outputs)
 
 
-  def init_training(self, graph, optimizer_conf):
+  def init_training(self, graph, optimizer_conf, learning_rate = None):
     if self.num_towers == 1:
-      self.init_training_seq2class_single(graph, optimizer_conf)
+      self.init_training_seq2class_single(graph, optimizer_conf, learning_rate)
     else:
-      self.init_training_seq2class_multi(graph, optimizer_conf)
+      self.init_training_seq2class_multi(graph, optimizer_conf, learning_rate)
 
 
-  def init_training_seq2class_single(self, graph, optimizer_conf):
+  def init_training_seq2class_single(self, graph, optimizer_conf, learning_rate = None):
     ''' initialze training graph; 
     assumes self.logits, self.labels_holder in place'''
     with graph.as_default():
@@ -190,7 +190,6 @@ class SEQ2CLASS(object):
       variables_before = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
 
       loss = nnet.loss_dnn(self.logits, self.labels_holder)
-      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
 
       # add reguarlization
       regularizer = tf.contrib.layers.l2_regularizer(scale = self.beta_holder)
@@ -198,7 +197,12 @@ class SEQ2CLASS(object):
       reg_term = tf.contrib.layers.apply_regularization(regularizer, reg_variables)
       loss += reg_term
 
-      opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
+      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
+      if learning_rate is None:
+        opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
+      else:
+        opt = nnet.prep_optimizer(optimizer_conf, learning_rate)
+
       grads = nnet.get_gradients(opt, loss)
       train_op = nnet.apply_gradients(optimizer_conf, opt, grads)
 

@@ -169,7 +169,7 @@ class LSTM(object):
         self.tower_outputs.append(tower_outputs)
 
 
-  def init_training(self, graph, optimizer_conf):
+  def init_training(self, graph, optimizer_conf, learning_rate = None):
     if self.num_towers == 1:
       self.init_training_lstm_single(graph, optimizer_conf)
     else:

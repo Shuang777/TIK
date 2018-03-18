@@ -39,6 +39,11 @@ class NNTrainer(object):
     self.max_length = feature_conf.get('max_length', 0)
     self.jitter_window = feature_conf.get('jitter_window', 0)
 
+    # for learning rate schedule. None in default (means scheduler outside)
+    # otherwise use prep_learning_rate
+    self.global_step = None
+    self.learning_rate = None
+
     #gpu related
     self.wait_gpu = True
     self.num_gpus = num_gpus
@@ -158,10 +163,23 @@ class NNTrainer(object):
 
     return
 
+
+  def prep_learning_rate(self, initial_lr, decay_steps, decay_rate):
+    
+    with self.graph.as_default():
+      self.global_step = tf.Variable(0, trainable=False)
+      self.learning_rate = tf.train.exponential_decay(initial_lr, 
+                                        global_step = self.global_step,
+                                        decay_steps = decay_steps, 
+                                        decay_rate = decay_rate)
+      self.add_global = self.global_step.assign_add(1)
+      step_initializer = tf.variables_initializer([self.global_step], name = 'step_initializer')
+      self.sess.run(step_initializer)
+
      
   def init_training(self, optimizer_conf):
     assert self.graph is not None
-    self.model.init_training(self.graph, optimizer_conf)
+    self.model.init_training(self.graph, optimizer_conf, self.learning_rate)
     self.sess.run(self.model.get_init_train_op())
 
  
@@ -186,14 +204,15 @@ class NNTrainer(object):
 
       feed_dict, has_data = self.model.prep_feed(train_gen, train_params)
                                                  
-
       if not has_data:   # no more data for training
         break
 
       if train_params is None:
         loss = self.sess.run(self.model.get_loss(), feed_dict = feed_dict)
-      else:
+      elif self.global_step is None:
         _, loss = self.sess.run([self.model.get_train_op(), self.model.get_loss()], feed_dict = feed_dict)
+      else:
+        _, loss, _ = self.sess.run([self.model.get_train_op(), self.model.get_loss(), self.add_global], feed_dict = feed_dict)
 
       batch_counts = train_gen.get_last_batch_counts()
       sum_avg_loss += loss
@@ -201,17 +220,23 @@ class NNTrainer(object):
       duration = time.time() - start_time
       count_steps += 1
 
-      if train_params is None or count_steps % 50 == 0 or count_steps == 1:
+      if train_params is None or count_steps % 20 == 0 or count_steps == 1:
         acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
         sum_accs += 1.0 * acc
         sum_acc_counts += 1.0 * train_gen.get_last_batch_counts()
 
         # Print status to stdout.
-        if count_steps % 10 == 0 or count_steps == 1:
-          iter_logger.info("Step %5d: avg loss = %.6f on %d %s (%.2f sec passed, %.2f %s per sec), peek acc: %.2f%%", 
-                    count_steps, sum_avg_loss / (count_steps*self.num_gpus), 
-                    sum_counts, train_gen.count_units(), duration, sum_counts / duration, 
+        if count_steps % 20 == 0 or count_steps == 1:
+          message = "Step %5d: avg loss = %.6f on %6d %s (%.2f %s per sec), peek acc: %.2f%%" % \
+                    (count_steps, sum_avg_loss / (count_steps*self.num_gpus), 
+                    sum_counts, train_gen.count_units(), sum_counts / duration, 
                     train_gen.count_units(), 100.0*acc/train_gen.get_last_batch_counts())
+
+        if train_params is not None and self.global_step is not None:
+          current_lr = self.sess.run(self.learning_rate)
+          message += " cur_lr %.6f" % current_lr
+
+        iter_logger.info(message)
 
     # reset batch_generator because it might be used again
     train_gen.reset_batch()
@@ -231,6 +256,11 @@ class NNTrainer(object):
     iter_logger.removeHandler(fh)
 
     return avg_loss, avg_acc_str
+
+
+  def get_current_lr(self):
+    assert self.sess is not None
+    return self.sess.run(self.learning_rate)
 
 
   def patch_to_batches(self, feats):

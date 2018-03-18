@@ -530,6 +530,8 @@ class SeqDataGenerator:
     for i in range(self.num_split):
       shutil.copyfile("%s/feats.%s.%d.scp" % (self.data, self.name, (i+1)), "%s/split.%s.%d.scp" % (self.tmp_dir, self.name, i))
 
+    self.num_samples = int(open('%s/num_samples.%s' % (self.data, self.name)).read())
+
     numpy.random.seed(seed)
 
     self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
@@ -557,7 +559,15 @@ class SeqDataGenerator:
     elif self.batch_pointer + self.batch_size >= len(self.x):
       return False
     return True
+     
       
+  def get_num_split(self):
+    return self.num_split 
+
+
+  def get_num_batches(self):
+    return self.num_samples / self.batch_size
+
 
   ## Return a batch to work on
   def get_next_split_data (self):
