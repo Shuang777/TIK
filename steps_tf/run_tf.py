@@ -9,12 +9,21 @@ import atexit
 from six.moves import configparser
 from subprocess import Popen, PIPE, check_output
 from nnet_trainer import NNTrainer
-from data_generator import FrameDataGenerator, UttDataGenerator
+from data_generator import SeqDataGenerator, FrameDataGenerator, UttDataGenerator
 import section_config   # my own config parser after configparser
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
+
+def load_utt2label(utt2label_file):
+  utt2label = {}
+  with open(utt2label_file) as f:
+    for line in f:
+      utt, label = line.strip().split()
+      utt2label[utt] = int(label)
+  return utt2label
+
 
 def match_iter_model(directory, model_base):
   for file in os.listdir(directory):
@@ -40,19 +49,13 @@ if len(sys.argv) != 5:
 
 config_file = sys.argv[1]
 data        = sys.argv[2]
-ali_dir     = sys.argv[3]
+ali_dir     = sys.argv[3]   # might be empty when we don't need it
 exp         = sys.argv[4]
 
 # prepare data dir
 os.path.isdir(exp) or os.makedirs (exp)
 os.path.isdir(exp+'/log') or os.makedirs (exp+'/log')
 os.path.isdir(exp+'/nnet') or os.makedirs (exp+'/nnet')
-
-# copy necessary files
-if os.path.exists(ali_dir+'/final.mat'):
-  shutil.copyfile(ali_dir+'/final.mat', exp+'/final.mat')
-shutil.copyfile(ali_dir+'/tree', exp+'/tree')
-Popen (['copy-transition-model', ali_dir+'/final.mdl', exp+'/final.mdl']).communicate()
 
 # read config file
 config = configparser.ConfigParser()
@@ -72,48 +75,75 @@ optimizer_conf = section_config.parse(config.items('optimizer'))
 scheduler_conf = section_config.parse(config.items('scheduler'))
 feature_conf = section_config.parse(config.items('feature'))
 
+nnet_arch = nnet_conf['nnet_arch']
+nnet_proto_file = general_conf.get('nnet_proto', None)
 summary_dir = exp+'/summary'
 
-# separate data into 10% cv and 90% training
-Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
+if nnet_arch in ['lstm', 'bn', 'dnn']:
+  # separate data into 10% cv and 90% training
+  Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
-# Generate pdf indices
-ali_labels = get_alignments(exp, ali_dir)
+  # Generate pdf indices
+  ali_labels = get_alignments(exp, ali_dir)
+
+  output_dim = int(check_output(
+                   'tree-info --print-args=false %s/tree | grep num-pdfs | awk \'{print $2}\''
+                   % ali_dir, shell=True).strip())
+
+  # copy necessary files
+  if os.path.exists(ali_dir+'/final.mat'):
+    shutil.copyfile(ali_dir+'/final.mat', exp+'/final.mat')
+  shutil.copyfile(ali_dir+'/tree', exp+'/tree')
+  Popen (['copy-transition-model', ali_dir+'/final.mdl', exp+'/final.mdl']).communicate()
+
+elif nnet_arch == 'seq2class':
+  utt2label_train = load_utt2label(data + '/utt2label.train')
+  utt2label_valid = load_utt2label(data + '/utt2label.valid')
+
+  output_dim = max(utt2label_train.values())+1
+elif nnet_arch == 'joint':
+  raise RuntimeError('TODO')
 
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
 # prepare training data generator
-if nnet_conf['nnet_arch'] == 'lstm':
-  tr_gen = UttDataGenerator (exp+'/tr90', ali_labels, ali_dir, 
-                          exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
+if nnet_arch == 'lstm':
+  tr_gen = UttDataGenerator(exp+'/tr90', ali_labels, ali_dir, 
+                            exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
 
-  cv_gen = UttDataGenerator (exp+'/cv10', ali_labels, ali_dir, 
-                          exp, 'cv', feature_conf, num_gpus = num_gpus)
-elif nnet_conf['nnet_arch'] in ['dnn', 'bn']:
-  tr_gen = FrameDataGenerator (exp+'/tr90', ali_labels, ali_dir, 
-                          exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
+  cv_gen = UttDataGenerator(exp+'/cv10', ali_labels, ali_dir, 
+                            exp, 'cv', feature_conf, num_gpus = num_gpus)
+elif nnet_arch in ['dnn', 'bn']:
+  tr_gen = FrameDataGenerator(exp+'/tr90', ali_labels, ali_dir, 
+                              exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
 
-  cv_gen = FrameDataGenerator (exp+'/cv10', ali_labels, ali_dir, 
-                          exp, 'cv', feature_conf, num_gpus = num_gpus)
+  cv_gen = FrameDataGenerator(exp+'/cv10', ali_labels, ali_dir, 
+                              exp, 'cv', feature_conf, num_gpus = num_gpus)
+elif nnet_arch == 'seq2class':
+  tr_gen = SeqDataGenerator(data, utt2label_train, None, exp, 'train',
+                            feature_conf, shuffle=True, num_gpus = num_gpus)
 
+  cv_gen = SeqDataGenerator(data, utt2label_valid, None, exp, 'valid', 
+                            feature_conf, num_gpus = num_gpus)
 else:
-  raise RuntimeError("nnet_arch %s not supported yet", nnet_conf['nnet_arch'])
+  raise RuntimeError("nnet_arch %s not supported yet", nnet_arch)
 
 atexit.register(tr_gen.clean)
 atexit.register(cv_gen.clean)
 
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
-output_dim = int(check_output(
-               'tree-info --print-args=false %s/tree | grep num-pdfs | awk \'{print $2}\''
-               % ali_dir, shell=True).strip())
+max_length = feature_conf.get('max_length', None)
 
-# save alignment priors
-tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
+if nnet_arch in ['dnn', 'lstm']:
+  # save alignment priors
+  tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
 
 # save input_dim and output_dim
 open(exp+'/input_dim', 'w').write(str(input_dim))
 open(exp+'/output_dim', 'w').write(str(output_dim))
+if max_length is not None:
+  open(exp+'/max_length', 'w').write(str(max_length))
 
 nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, feature_conf, 
                  num_gpus = num_gpus, summary_dir = summary_dir)
@@ -127,12 +157,13 @@ elif os.path.isfile(mlp_init+'.index'):
   nnet.read(mlp_init)
   mlp_best = mlp_init
 else:
-  if 'nnet_proto' in general_conf:
-    shutil.copyfile(general_conf['nnet_proto'], exp+'/nnet.proto')
+  if nnet_proto_file is None:
+    nnet_proto_file = exp+'/nnet.proto'
+    nnet.make_proto(nnet_conf, nnet_proto_file)
   else:
-    nnet.make_proto(nnet_conf, exp+'/nnet.proto')
+    shutil.copyfile(nnet_proto_file, exp+'/nnet.proto')
 
-  nnet.init_nnet(exp+'/nnet.proto')
+  nnet.init_nnet(nnet_proto_file)
 
   logger.info("initialize model to %s", mlp_init)
   nnet.write(mlp_init)
