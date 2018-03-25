@@ -9,21 +9,26 @@ import atexit
 from six.moves import configparser
 from subprocess import Popen, PIPE, check_output
 from nnet_trainer import NNTrainer
-from data_generator import SeqDataGenerator, FrameDataGenerator, UttDataGenerator
+from data_generator import SeqDataGenerator, FrameDataGenerator, UttDataGenerator, JointDNNDataGenerator
 import section_config   # my own config parser after configparser
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
-def load_utt2label(utt2label_file):
+def load_utt2label(utt2label_file, convert_int = False):
   utt2label = {}
+  labels = set()
   with open(utt2label_file) as f:
     for line in f:
       utt, label = line.strip().split()
-      utt2label[utt] = int(label)
-  return utt2label
-
+      if convert_int:
+        utt2label[utt] = int(label)
+        labels.add(int(label))
+      else:
+        utt2label[utt] = label
+        labels.add(label)
+  return utt2label, labels
 
 def match_iter_model(directory, model_base):
   for file in os.listdir(directory):
@@ -40,6 +45,18 @@ def get_alignments(exp, ali_dir):
     ali_labels[utt] = [int(i) for i in line[1:]]
   return ali_labels
 
+def assign_spk_label(spks):
+  spk2label = {}
+  for spk in spks:
+    if spk not in spk2label:
+      spk2label[spk] = len(spk2label)
+  return spk2label
+
+def mapspk2label(utt2spk, spk2label):
+  utt2label = {}
+  for utt, spk in utt2spk.iteritems():
+    utt2label[utt] = spk2label[spk]
+  return utt2label
 
 if __name__ != '__main__':
   raise ImportError ('This script can only be run, and can\'t be imported')
@@ -83,12 +100,37 @@ if nnet_arch in ['lstm', 'bn', 'dnn']:
   # separate data into 10% cv and 90% training
   Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
 
+  # copy necessary files
+  if os.path.exists(ali_dir+'/final.mat'):
+    shutil.copyfile(ali_dir+'/final.mat', exp+'/final.mat')
+  shutil.copyfile(ali_dir+'/tree', exp+'/tree')
+  Popen (['copy-transition-model', ali_dir+'/final.mdl', exp+'/final.mdl']).communicate()
+  
   # Generate pdf indices
   ali_labels = get_alignments(exp, ali_dir)
-
+  
   output_dim = int(check_output(
                    'tree-info --print-args=false %s/tree | grep num-pdfs | awk \'{print $2}\''
                    % ali_dir, shell=True).strip())
+
+elif nnet_arch == 'seq2class':
+  utt2label_train, _ = load_utt2label(data + '/utt2label.train', convert_int = True)
+  utt2label_valid, _ = load_utt2label(data + '/utt2label.valid', convert_int = True)
+
+  output_dim = max(utt2label_train.values())+1
+
+elif nnet_arch == 'jointdnn':
+  # separate data into 10% cv and 90% training
+  Popen(['myutils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
+
+  utt2spk_train, spks_train = load_utt2label(exp+'/tr90/utt2spk')
+  utt2spk_valid, spks_valid = load_utt2label(exp+'/cv10/utt2spk')
+
+  assert(spks_train == spks_valid)
+  spk2label = assign_spk_label(spks_train)
+
+  utt2label_train = mapspk2label(utt2spk_train, spk2label)
+  utt2label_valid = mapspk2label(utt2spk_valid, spk2label)
 
   # copy necessary files
   if os.path.exists(ali_dir+'/final.mat'):
@@ -96,13 +138,16 @@ if nnet_arch in ['lstm', 'bn', 'dnn']:
   shutil.copyfile(ali_dir+'/tree', exp+'/tree')
   Popen (['copy-transition-model', ali_dir+'/final.mdl', exp+'/final.mdl']).communicate()
 
-elif nnet_arch == 'seq2class':
-  utt2label_train = load_utt2label(data + '/utt2label.train')
-  utt2label_valid = load_utt2label(data + '/utt2label.valid')
+  # Generate pdf indices
+  ali_labels = get_alignments(exp, ali_dir)
 
-  output_dim = max(utt2label_train.values())+1
-elif nnet_arch == 'joint':
-  raise RuntimeError('TODO')
+  asr_output_dim = int(check_output(
+                   'tree-info --print-args=false %s/tree | grep num-pdfs | awk \'{print $2}\''
+                   % ali_dir, shell=True).strip())
+  sid_output_dim = max(utt2label_train.values())+1
+
+else:
+  raise RuntimeError("nnet_arch %s not supported", nnet_arch)
 
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
@@ -125,6 +170,11 @@ elif nnet_arch == 'seq2class':
 
   cv_gen = SeqDataGenerator(data, utt2label_valid, None, exp, 'valid', 
                             feature_conf, num_gpus = num_gpus)
+elif nnet_arch == 'jointdnn':
+  tr_gen = JointDNNDataGenerator(exp+'/tr90', utt2label_train, ali_labels, 
+                                 exp, 'train', feature_conf, shuffle=True)
+  cv_gen = JointDNNDataGenerator(exp+'/cv10', utt2label_valid, ali_labels, 
+                                 exp, 'cv', feature_conf)
 else:
   raise RuntimeError("nnet_arch %s not supported yet", nnet_arch)
 

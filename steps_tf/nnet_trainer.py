@@ -12,6 +12,7 @@ from dnn import DNN
 from bn import BN
 from lstm import LSTM
 from seq2class import SEQ2CLASS
+from jointdnn import JOINTDNN
 
 logger = logging.getLogger('__main__')
 logger.setLevel(logging.INFO)
@@ -61,6 +62,9 @@ class NNTrainer(object):
       self.model = LSTM(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     elif self.arch == 'seq2class':
       self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
+    elif self.arch == 'jointdnn':
+      self.model = JOINTDNN(input_dim, asr_output, sid_output, self.batch_size, 
+                            self.max_length, num_gpus)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
  
