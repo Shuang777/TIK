@@ -146,6 +146,8 @@ elif nnet_arch == 'jointdnn':
                    % ali_dir, shell=True).strip())
   sid_output_dim = max(utt2label_train.values())+1
 
+  output_dim = (asr_output_dim, sid_output_dim)
+
 else:
   raise RuntimeError("nnet_arch %s not supported", nnet_arch)
 

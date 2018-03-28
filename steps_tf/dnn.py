@@ -1,5 +1,6 @@
 import tensorflow as tf
 import nnet
+import make_nnet_proto
 
 class DNN(object):
 
@@ -18,7 +19,11 @@ class DNN(object):
   def get_output_dim(self):
     return self.output_dim
 
+
+  def make_proto(self, nnet_conf, nnet_proto_file):
+    make_nnet_proto.make_nnet_proto(self.input_dim, self.output_dim, nnet_conf, nnet_proto_file)
   
+
   def init(self, graph, nnet_proto_file, seed = 777):
 
     if self.num_towers == 1:

@@ -7,7 +7,6 @@ from subprocess import Popen,PIPE
 import nnet
 import math
 import logging
-from make_nnet_proto import make_nnet_proto, make_lstm_proto, make_seq2class_proto
 from dnn import DNN
 from bn import BN
 from lstm import LSTM
@@ -63,8 +62,7 @@ class NNTrainer(object):
     elif self.arch == 'seq2class':
       self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     elif self.arch == 'jointdnn':
-      self.model = JOINTDNN(input_dim, asr_output, sid_output, self.batch_size, 
-                            self.max_length, num_gpus)
+      self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
  
@@ -78,17 +76,7 @@ class NNTrainer(object):
 
 
   def make_proto(self, nnet_conf, nnet_proto_file):
-    if self.arch in ['dnn', 'bn']:    # currently we use the same function for dnn and bn
-      make_nnet_proto(self.model.get_input_dim(), self.model.get_output_dim(), 
-                      nnet_conf, nnet_proto_file)
-    elif self.arch == 'lstm':
-      make_lstm_proto(self.model.get_input_dim(), self.model.get_output_dim(), 
-                      nnet_conf, nnet_proto_file)
-    elif self.arch == 'seq2class':
-      make_seq2class_proto(self.model.get_input_dim(), self.model.get_output_dim(),
-                           nnet_conf, nnet_proto_file)
-    else:
-      raise RuntimeError("arch type %s not supported", self.arch)
+    self.model.make_proto(nnet_conf, nnet_proto_file)
 
 
   def __exit__ (self):
@@ -212,10 +200,13 @@ class NNTrainer(object):
         break
 
       if train_params is None:
+        # validation mode
         loss = self.sess.run(self.model.get_loss(), feed_dict = feed_dict)
       elif self.global_step is None:
+        # training mode: learning rate scheduler
         _, loss = self.sess.run([self.model.get_train_op(), self.model.get_loss()], feed_dict = feed_dict)
       else:
+        # training mode: exponential decay
         _, loss, _ = self.sess.run([self.model.get_train_op(), self.model.get_loss(), self.add_global], feed_dict = feed_dict)
 
       batch_counts = train_gen.get_last_batch_counts()
