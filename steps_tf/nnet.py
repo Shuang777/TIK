@@ -45,7 +45,24 @@ def placeholder_seq2class(input_dim, max_length, batch_size):
   return feats_holder, mask_holder, labels_holder
 
 
-def inference_dnn(feats_holder, nnet_proto_file, keep_prob_holder = None, reuse = False):
+def placeholder_jointdnn(input_dim, max_length, batch_size):
+  '''
+  outputs:
+    feats_holder, asr_labels_holder, sid_labels_holder, mask_holder
+  '''
+  feats_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length, input_dim), name='feature')
+
+  asr_labels_holder = tf.placeholder(tf.int32, shape=(batch_size, max_length), name='asr_target')
+  
+  sid_labels_holder = tf.placeholder(tf.int32, shape=(batch_size), name='sid_target')
+
+  mask_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length), name='mask')
+
+  return feats_holder, mask_holder, asr_labels_holder, sid_labels_holder
+
+
+def inference_dnn(feats_holder, nnet_proto_file, keep_prob_holder = None, 
+                  reuse = False, prefix = ''):
   '''
   args:
     feats_holder: np 2-d array of size [num_batch, feat_dim]
@@ -62,7 +79,7 @@ def inference_dnn(feats_holder, nnet_proto_file, keep_prob_holder = None, reuse 
     line = line.strip()
     if line == '</NnetProto>':
       break
-    with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+    with tf.variable_scope(prefix+'layer'+str(count_layer), reuse = reuse):
       layer_out = build_layer(line, layer_in, keep_prob = keep_prob_holder, reuse = reuse)
       layer_in = layer_out
       count_layer += 1
@@ -144,7 +161,7 @@ def inference_lstm(feats_holder, seq_length_holder, nnet_proto_file,
 
 
 def inference_seq2class(feats_holder, mask_holder, nnet_proto_file, 
-                        keep_prob_holder, reuse = False):
+                        keep_prob_holder, reuse = False, prefix = ''):
   '''
   args:
     feats_holder: np 3-d array of size [num_batch, max_length, feat_dim]
@@ -165,7 +182,7 @@ def inference_seq2class(feats_holder, mask_holder, nnet_proto_file,
     line = line.strip()
     if line.startswith('<Pooling>'):
       break
-    with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+    with tf.variable_scope(prefix+'layer'+str(count_layer), reuse = reuse):
       layer_out = build_layer(line, layer_in, keep_prob = keep_prob_holder)
       layer_in = layer_out
       count_layer += 1
@@ -231,16 +248,29 @@ def build_layer(line, layer_in, seq_length = None, mask_holder = None,
   return layer_out
 
 
-def loss_dnn(logits, labels):
+def loss_dnn(logits, labels, mask = None):
   '''
   args:
-    logis: tf tensor of size [batch_size, num_targets]
-    labels: tf tensor of size [batch_size]
+    scenario 1:
+      logis: tf tensor of size [batch_size, num_targets]
+      labels: tf tensor of size [batch_size]
+      mask: None
+    scenario 2:
+      logits: tf tensor of size [batch_size, max_length, num_targets]
+      labels: tf tensor of size [batch_size, max_length]
+      mask: tf tensor of size [batch_size, max_length]
   '''
   labels = tf.to_int64(labels)
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits=logits, labels=labels, name='xentropy')
-  loss = tf.reduce_mean(cross_entropy, name='xentropy-mean')
+  if mask is None:
+    loss = tf.reduce_mean(cross_entropy, name='xentropy-mean')
+  else:
+    masked_cross_entropy = tf.multiply(cross_entropy, mask)
+    num_elements = tf.reduce_prod(mask.get_shape())
+    num_counts = tf.reduce_sum(mask)
+    # we use this method because reduce_sum may have numeric issue
+    loss = tf.reduce_mean(masked_cross_entropy, name='xentropy-mean') / num_counts * tf.to_float(num_elements)
   return loss
 
 
@@ -257,6 +287,7 @@ def loss_lstm(logits, labels, mask):
   masked_cross_entropy = tf.multiply(cross_entropy, mask)
   num_elements = tf.reduce_prod(mask.get_shape())
   num_counts = tf.reduce_sum(mask)
+  # we use this method because reduce_sum may have numeric issue
   loss = tf.reduce_mean(masked_cross_entropy, name='xentropy-mean') / num_counts * tf.to_float(num_elements)
   return loss
 
@@ -297,9 +328,22 @@ def apply_gradients(op_conf, opt, grads):
   return train_op
 
 
-def evaluation_dnn(logits, labels):
-
-  correct = tf.nn.in_top_k(logits, labels, 1)
+def evaluation_dnn(logits, labels, mask = None):
+  '''
+  args:
+    scenario 1:
+      logits: tf tensor of size [num_frames, num_targets]
+      labels: tf tensof of size [num_frames]
+      mask: None
+    scenario 2:
+      logits: tf tensor of size [batch_size, max_length, num_targets]
+      labels: tf tensor of size [batch_size, max_length]
+      mask: tf tensor of size [batch_size, max_length]
+  '''
+  if mask is None:
+    correct = tf.nn.in_top_k(logits, labels, 1)
+  else:
+    correct = get_correct3d(logits, labels, mask)
   return tf.reduce_sum(tf.cast(correct, tf.int32))
 
 
@@ -310,13 +354,18 @@ def evaluation_lstm(logits, labels, mask):
     labels: tf tensor of size [batch_size, max_length]
     mask: tf tensor of size [batch_size, max_length]
   '''
+  correct = get_correct3d(logits, labels, mask)
+  return tf.reduce_sum(tf.cast(correct, tf.int32))
+
+
+def get_correct3d(logits, labels, mask):
   feat_dim = logits.get_shape()[2]
   logits_reshape = tf.reshape(logits, [-1, int(feat_dim)])
   labels_reshape = tf.reshape(labels, [-1])
   mask_reshape = tf.reshape(mask, [-1])
   correct = tf.nn.in_top_k(logits_reshape, labels_reshape, 1)
   correct = tf.multiply(tf.to_float(correct), mask_reshape)
-  return tf.reduce_sum(tf.cast(correct, tf.int32))
+  return correct
 
 
 def average_gradients(tower_grads):
