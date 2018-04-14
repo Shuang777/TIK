@@ -869,8 +869,7 @@ class JointDNNDataGenerator:
 
   def pack_utt_data(self, features, asr_labels, sid_labels):
     '''
-    for each utterance, we use a rolling window to predict the output posterior. 
-    Reference: Deep Bi-Directional Recurrent Network over Spectral Windows
+    for each utterance, we use a rolling window to generate enough segments for speaker ID modeling
     input:
       features: list of np 2d-array [num_frames, feat_dim]
       asr_labels: list of np array [num_frames]
@@ -932,7 +931,7 @@ class JointDNNDataGenerator:
       if not self.loop and self.split_data_counter == self.num_split:
         # not loop mode and we arrive the end, do not read anymore
         # let's just throw away the last few samples
-        return None, None, None
+        return None, None, None, None
 
       x, y, z = self.get_next_split_data()
       x_packed, y_packed, z_packed, mask = self.pack_utt_data(x, y, z)
@@ -962,24 +961,23 @@ class JointDNNDataGenerator:
     z_mini = self.z[self.batch_pointer:self.batch_pointer+self.batch_size]
     mask_mini = self.mask[self.batch_pointer:self.batch_pointer+self.batch_size]
 
-    self.last_batch_utts = len(y_mini)
     self.batch_pointer += self.batch_size
+    self.last_batch_utts = len(y_mini)
+    self.last_batch_frames = mask_mini.sum()
 
     return x_mini, y_mini, z_mini, mask_mini
-
 
   def get_batch_size(self):
     return self.batch_size
 
-  
-  def get_last_batch_counts(self):
+  def get_last_batch_utts(self):
     return self.last_batch_utts
 
-
-  def count_units(self):
-    return 'utts'
-
+  def get_last_batch_frames(self):
+    return self.last_batch_frames
 
   def reset_batch(self):
     self.split_data_counter = 0
 
+  def count_units(self):
+    return 'utterances'
