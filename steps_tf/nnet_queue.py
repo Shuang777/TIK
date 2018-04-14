@@ -52,7 +52,7 @@ class NNSeqQueue(object):
     self.mask_queue.extend(mask)
     self.utt_list_queue.extend(utt_list)
 
-    if len(self.feats_queue) >= self.batch_size:
+    while len(self.feats_queue) >= self.batch_size:
       # now, time to send to nnet
       batch_feats = np.array(self.feats_queue[0:self.batch_size])
       batch_mask = np.array(self.mask_queue[0:self.batch_size])
