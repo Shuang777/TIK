@@ -28,7 +28,7 @@ class NNTrainer(object):
   def __init__(self, nnet_conf, input_dim, output_dim, feature_conf, num_gpus = 1, 
                use_gpu = True, gpu_id = -1, summary_dir = None):
     ''' just some basic config for this trainer '''
-    self.arch = nnet_conf['arch']
+    self.arch = nnet_conf['nnet_arch']
 
     #tensorflow related
     self.graph = None
