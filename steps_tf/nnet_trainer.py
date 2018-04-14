@@ -175,9 +175,15 @@ class NNTrainer(object):
     self.sess.run(self.model.get_init_train_op())
 
  
-  def iter_data(self, logfile, train_gen, train_params):
-    '''Train/test one iteration; use train_params == None to specify test mode'''
+  def iter_data(self, logfile, train_gen, params, validation_mode = False):
+    if self.arch == 'jointdnn':   # not a good implementation here, but let's just use it
+      return self.iter_data_joint(logfile, train_gen, params, validation_mode)
+    else:
+      return self.iter_data_single(logfile, train_gen, params, validation_mode)
 
+
+  def iter_data_single(self, logfile, train_gen, params, validation_mode = False):
+    '''Train/test one iteration; check if 'learning_rate' in params to specify test mode'''
     assert self.batch_size*self.num_gpus == train_gen.get_batch_size()
 
     fh = logging.FileHandler(logfile, mode = 'w')
@@ -194,12 +200,12 @@ class NNTrainer(object):
 
     while(True):
 
-      feed_dict, has_data = self.model.prep_feed(train_gen, train_params)
+      feed_dict, has_data = self.model.prep_feed(train_gen, params)
                                                  
       if not has_data:   # no more data for training
         break
 
-      if train_params is None:
+      if validation_mode:
         # validation mode
         loss = self.sess.run(self.model.get_loss(), feed_dict = feed_dict)
       elif self.global_step is None:
@@ -215,7 +221,7 @@ class NNTrainer(object):
       duration = time.time() - start_time
       count_steps += 1
 
-      if train_params is None or count_steps % 20 == 0 or count_steps == 1:
+      if validation_mode or count_steps % 20 == 0 or count_steps == 1:
         acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
         sum_accs += 1.0 * acc
         sum_acc_counts += 1.0 * train_gen.get_last_batch_counts()
@@ -227,7 +233,7 @@ class NNTrainer(object):
                     sum_counts, train_gen.count_units(), sum_counts / duration, 
                     train_gen.count_units(), 100.0*acc/train_gen.get_last_batch_counts())
 
-        if train_params is not None and self.global_step is not None:
+        if not validation_mode and self.global_step is not None:
           current_lr = self.sess.run(self.learning_rate)
           message += " cur_lr %.6f" % current_lr
 
@@ -246,6 +252,120 @@ class NNTrainer(object):
 
     iter_logger.info("Complete: avg loss = %.6f on %d %s (%.2f sec passed, %.2f %s per sec), peek acc: %s", 
                 avg_loss, sum_counts, train_gen.count_units(), duration, 
+                sum_counts / duration, train_gen.count_units(), avg_acc_str)
+
+    iter_logger.removeHandler(fh)
+
+    return avg_loss, avg_acc_str
+
+
+  def iter_data_joint(self, logfile, train_gen, params, validation_mode = False):
+    '''Train/test one iteration; '''
+    assert self.batch_size*self.num_gpus == train_gen.get_batch_size()
+
+    fh = logging.FileHandler(logfile, mode = 'w')
+    iter_logger.addHandler(fh)
+
+    sum_avg_loss = 0
+    sum_avg_asr_loss = 0
+    sum_avg_sid_loss = 0
+    count_steps = 0           # pair to record losses
+
+    sum_asr_accs = 0
+    sum_asr_acc_counts = 0    # pair to record asr accuracy
+
+    sum_sid_accs = 0
+    sum_sid_acc_counts = 0    # pair to record sid accuracy
+
+    sum_counts = 0            # to record progression speed
+
+    start_time = time.time()
+
+    while(True):
+
+      feed_dict, has_data = self.model.prep_feed(train_gen, params)
+                                                 
+      if not has_data:   # no more data for training
+        break
+
+      if validation_mode:
+        loss, asr_loss, sid_loss = self.sess.run(
+                                            [ self.model.get_loss(),
+                                              self.model.get_asr_loss(),
+                                              self.model.get_sid_loss() ], feed_dict = feed_dict)
+      elif self.global_step is None:
+        # training mode: learning rate scheduler
+        _, loss, asr_loss, sid_loss = self.sess.run(
+                                            [ self.model.get_train_op(), 
+                                              self.model.get_loss(),
+                                              self.model.get_asr_loss(),
+                                              self.model.get_sid_loss() ], feed_dict = feed_dict)
+      else:
+        # training mode: exponential decay
+        _, loss, asr_loss, sid_loss,  _ = self.sess.run(
+                                            [ self.model.get_train_op(), 
+                                              self.model.get_loss(), 
+                                              self.model.get_asr_loss(),
+                                              self.model.get_sid_loss(),
+                                              self.add_global ], feed_dict = feed_dict)
+
+      sum_avg_loss += loss
+      sum_avg_asr_loss += asr_loss
+      sum_avg_sid_loss += sid_loss
+      count_steps += 1
+
+      last_batch_counts = train_gen.get_last_batch_utts()
+      sum_counts += last_batch_counts
+
+      duration = time.time() - start_time
+
+      if validation_mode or count_steps % 20 == 0 or count_steps == 1:
+        # we want to check accuracy
+        asr_acc, sid_acc = self.sess.run(
+                                [ self.model.get_asr_eval_acc(),
+                                  self.model.get_sid_eval_acc() ], feed_dict = feed_dict)
+
+        sum_asr_accs += 1.0 * asr_acc
+        sum_asr_acc_counts += 1.0 * train_gen.get_last_batch_frames()
+        
+        sum_sid_accs += 1.0 * sid_acc
+        sum_sid_acc_counts += 1.0 * train_gen.get_last_batch_utts()
+
+        # Print status to stdout.
+        if count_steps % 20 == 0 or count_steps == 1:
+          message = "Step %5d: avg loss = %.6f (asr %.6f & sid %.6f) on %6d utts (%.2f utts per sec), peek asr acc: %.2f%% & sid acc: %.2f%%" % \
+                    (count_steps, sum_avg_loss / (count_steps*self.num_gpus),
+                    sum_avg_asr_loss / (count_steps * self.num_gpus),
+                    sum_avg_sid_loss / (count_steps * self.num_gpus), 
+                    sum_counts, sum_counts / duration,  
+                    100.0*asr_acc/train_gen.get_last_batch_frames(),
+                    100.0*sid_acc/train_gen.get_last_batch_utts())
+
+        if not validation_mode and self.global_step is not None:
+          current_lr = self.sess.run(self.learning_rate)
+          message += " cur_lr %.6f" % current_lr
+
+        iter_logger.info(message)
+
+    # reset batch_generator because it might be used again
+    train_gen.reset_batch()
+
+    avg_loss = sum_avg_loss / (count_steps * self.num_gpus)
+    avg_asr_loss = sum_avg_asr_loss / (count_steps * self.num_gpus)
+    avg_sid_loss = sum_avg_sid_loss / (count_steps * self.num_gpus)
+
+    if sum_asr_acc_counts == 0:
+      avg_acc = None
+      avg_acc_str = str(avg_acc)
+    else:
+      avg_asr_acc = sum_asr_accs/sum_asr_acc_counts
+      avg_asr_acc_str = "%.2f%%" % (100.0*avg_asr_acc)
+      avg_sid_acc = sum_sid_accs/sum_sid_acc_counts
+      avg_sid_acc_str = "%.2f%%" % (100.0*avg_sid_acc)
+      avg_acc_str = "asr " + avg_asr_acc_str + " sid " + avg_sid_acc_str
+
+    iter_logger.info("Complete: avg loss = %.6f (asr %.6f & sid %.6f) on %d %s (%.2f sec passed, %.2f %s per sec), peek acc: %s", 
+                avg_loss, avg_asr_loss, avg_sid_loss, sum_counts, train_gen.count_units(), duration, 
                 sum_counts / duration, train_gen.count_units(), avg_acc_str)
 
     iter_logger.removeHandler(fh)
@@ -302,10 +422,10 @@ class NNTrainer(object):
 
     
     # now we need to pad more zeros to fit the place holder, because each place holder can only host [ batch_size x max_length x feat_dim ] this many data
-    baches2pad = self.batch_size - len(feats_packed) % self.batch_size
-    if baches2pad != 0:
+    batches2pad = self.batch_size - len(feats_packed) % self.batch_size
+    if batches2pad != 0:
       zeros2pad = np.zeros((max_length, len(feats[0])))
-      for i in range(baches2pad):
+      for i in range(batches2pad):
         feats_packed.append(zeros2pad)
         seq_length.append(0)
         post_pick.append([0, 0])
@@ -316,6 +436,37 @@ class NNTrainer(object):
     return feats_packed, seq_length, post_pick
 
 
+  def pack_utterance_jointdnn(self, feats):
+    '''
+    args:
+      feats: list of array, i.e. matrix of size [num_frames, feat_dim]
+    output:
+      feat_packs: np 3-d array of size [num_batches, max_length, feat_dim]
+    '''
+    max_length = self.max_length
+    start_index = 0
+    feats_packed = []
+    while start_index + max_length < len(feats):
+      end_index = start_index + max_length
+      feats_packed.append(feats[start_index:end_index])
+      start_index += max_length
+
+    num_zero = max_length + start_index - len(feats)
+    zeros2pad = np.zeros((num_zero, len(feats[0])))
+    feats_packed.append(np.concatenate((feats[start_index:], zeros2pad)))
+    
+    # now we need to pad more zeros to fit the place holder, because each place holder can only host [ batch_size, max_length, feat_dim ] this many data
+    batches2pad = self.batch_size - len(feats_packed) % self.batch_size
+    if batches2pad != 0:
+      zeros2pad = np.zeros((max_length, len(feats[0])))
+      for i in range(batches2pad):
+        feats_packed.append(zeros2pad)
+
+    feats_packed = np.array(feats_packed)
+
+    return feats_packed
+
+
   def predict(self, feats, no_softmax = False):
     if self.arch == 'dnn':
       posts = self.predict_dnn(feats, no_softmax)
@@ -323,6 +474,8 @@ class NNTrainer(object):
       posts = self.gen_bn_feats(feats, no_softmax)
     elif self.arch == 'lstm':
       posts = self.predict_lstm(feats, no_softmax)
+    elif self.arch == 'jointdnn':
+      posts = self.predict_jointdnn(feats, no_softmax)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
     return posts
@@ -400,7 +553,7 @@ class NNTrainer(object):
 
     posts = []
     assert len(feats_packed) % self.batch_size == 0
-    num_batches = int(math.ceil(1.0 * len(feats_packed) / self.batch_size))
+    num_batches = len(feats_packed) / self.batch_size
     for i in range(num_batches):
       batch_start = i*self.batch_size
       batch_end = (i+1)*self.batch_size
@@ -424,13 +577,49 @@ class NNTrainer(object):
 
     return posts[0:len(feats),:]
 
+  
+  def predict_jointdnn(self, feats, no_softmax = False):
+    '''
+    we need to pack utterance to batches to generate frame posteriors
+    args: 
+      feats: np 2-d array of size[num_frames, feat_dim]
+    output:
+      posts: np 2-d array of size[num_frames, num_targets]
+    '''
+    # we use a rolling window to process the whole utterance
+    feats_packed = self.pack_utterance_jointdnn(feats)
+
+    posts = []
+    assert len(feats_packed) % self.batch_size == 0
+    num_batches = len(feats_packed) / self.batch_size
+    for i in range(num_batches):
+      batch_start = i*self.batch_size
+      batch_end = (i+1)*self.batch_size
+      # feats_batch of size [batch_size, max_len, feat_dim]
+      feats_batch = feats_packed[batch_start:batch_end, :]
+
+      feed_dict = self.model.prep_forward_feed(feats_batch)
+
+      # batch_posts of size [batch_size, max_len, num_targets]
+      if no_softmax:
+        batch_posts = self.sess.run(self.model.get_asr_logits(), feed_dict=feed_dict)
+      else:
+        batch_posts = self.sess.run(self.model.get_asr_outputs(), feed_dict=feed_dict)
+
+      posts.append(np.vstack(batch_posts))
+
+    posts = np.concatenate(posts)
+
+    return posts[0:len(feats),:]
+
 
   def gen_embedding(self, feats, mask, embedding_index = 0):
     if self.arch == 'seq2class':
-
       feed_dict = self.model.prep_forward_feed(feats, mask)
       embeddings = self.sess.run(self.model.get_embedding(embedding_index), feed_dict=feed_dict)
-
+    elif self.arch == 'jointdnn':
+      feed_dict = self.model.prep_forward_feed_sid(feats, mask)
+      embeddings = self.sess.run(self.model.get_embedding(embedding_index), feed_dict=feed_dict)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
     return embeddings
