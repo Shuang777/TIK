@@ -129,7 +129,7 @@ if jitter_window is not None:
 if 'init_file' in scheduler_conf:
   logger.info("Initializing graph using %s", scheduler_conf['init_file'])
 
-nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
+nnet = NNTrainer(nnet_conf, input_dim, output_dim, 
                  feature_conf['batch_size'], summary_dir = summary_dir,
                  max_length = max_length)
 

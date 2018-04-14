@@ -91,7 +91,7 @@ open(exp+'/output_dim', 'w').write(str(output_dim))
 if max_length is not None:
   open(exp+'/max_length', 'w').write(str(max_length))
 
-nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
+nnet = NNTrainer(nnet_conf, input_dim, output_dim, 
                  feature_conf, num_gpus = num_gpus,
                  summary_dir = exp+'/summary')
 

@@ -25,10 +25,10 @@ class NNTrainer(object):
   session is initialized either by read() or by init_nnet().
   '''
 
-  def __init__(self, arch, input_dim, output_dim, feature_conf, num_gpus = 1, 
+  def __init__(self, nnet_conf, input_dim, output_dim, feature_conf, num_gpus = 1, 
                use_gpu = True, gpu_id = -1, summary_dir = None):
     ''' just some basic config for this trainer '''
-    self.arch = arch
+    self.arch = nnet_conf['arch']
 
     #tensorflow related
     self.graph = None
@@ -62,7 +62,8 @@ class NNTrainer(object):
     elif self.arch == 'seq2class':
       self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     elif self.arch == 'jointdnn':
-      self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
+      self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
+                            buckets = nnet_conf.get('buckets', None))
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
  

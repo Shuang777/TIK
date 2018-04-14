@@ -57,7 +57,7 @@ logger.info("use-gpu: %s", str(args.use_gpu))
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
 logger.info("initializing the graph")
-nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, 
+nnet = NNTrainer(input_dim, output_dim, 
                  feature_conf, num_gpus = num_gpus, use_gpu = args.use_gpu,
                  gpu_id = args.gpu_id)
 

@@ -85,7 +85,7 @@ logger.info("initializing the graph")
 # we have feature_conf['batch_size'] * num_gpus as batch_size because of multi-gpu training.
 # but during decoding we only use at most 1 gpu
 feature_conf['batch_size'] = feature_conf['batch_size'] * num_gpus
-nnet = NNTrainer(nnet_conf['nnet_arch'], input_dim, output_dim, feature_conf, 
+nnet = NNTrainer(nnet_conf, input_dim, output_dim, feature_conf, 
                  num_gpus = 1, use_gpu = args.use_gpu, gpu_id = args.gpu_id)
 
 logger.info("loading the model %s", args.model_file)
