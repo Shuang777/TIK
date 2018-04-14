@@ -121,7 +121,8 @@ elif nnet_arch == 'seq2class':
 
 elif nnet_arch == 'jointdnn':
   # separate data into 10% cv and 90% training
-  Popen(['myutils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
+  Popen(['myutils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', '--spk', 'true', 
+         data, exp+'/tr90', exp+'/cv10']).communicate()
 
   utt2spk_train, spks_train = load_utt2label(exp+'/tr90/utt2spk')
   utt2spk_valid, spks_valid = load_utt2label(exp+'/cv10/utt2spk')
@@ -242,7 +243,11 @@ else:
 
 logger.info("### neural net training started at %s", datetime.datetime.today())
 
-loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, None)
+nnet_valid_conf = {}
+if 'beta' in nnet_train_conf:  # beta for loss function
+  nnet_valid_conf['beta'] = nnet_train_conf['beta']
+
+loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, nnet_valid_conf, validation_mode = True)
 logger.info("ITERATION 0: loss on cv %.3f, acc_cv %s", loss, acc)
 
 for i in range(max_iters):
@@ -259,7 +264,7 @@ for i in range(max_iters):
 
   loss_tr, acc_tr = nnet.iter_data(exp+'/log/iter%02d.tr.log'%(i+1), tr_gen, nnet_train_conf)
 
-  loss_cv, acc_cv = nnet.iter_data(exp+'/log/iter%02d.cv.log'%(i+1), cv_gen, None)
+  loss_cv, acc_cv = nnet.iter_data(exp+'/log/iter%02d.cv.log'%(i+1), cv_gen, nnet_valid_conf, validation_mode = True)
 
   loss_prev = loss
 
