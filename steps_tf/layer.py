@@ -202,27 +202,80 @@ def blstm(info, layer_in, seq_length, keep_in_prob, keep_out_prob, reuse = False
 
 def pooling(info, layer_in, mask, reuse = False):
   '''
-  layer_in: 3-d np array of size [num_batch, max_length, hidden_dim]
-  mask: 2-d np array of size [num_batch, max_length]
+  3-d case:
+    layer_in: 3-d np array of size [num_batch, max_length, hidden_dim]
+    mask: 2-d np array of size [num_batch, max_length]
+  or 2-d case:
+    layer_in: 2-d np array of size [max_length, hidden_dim]
+    mask: 1-d np array of size [max_length]
   '''
+  if len(layer_in.get_shape()) == 3:
+    return pooling3d(info, layer_in, mask, reuse)
+  elif len(layer_in.get_shape()) == 2:
+    return pooling2d(info, layer_in, mask, reuse)
+
+
+def pooling3d(info, layer_in, mask, reuse = False):
+  '''
+    layer_in: 3-d np array of size [num_batch, max_length, hidden_dim]
+    mask: 2-d np array of size [num_batch, max_length]
+  '''
+   
   info_dict = info2dict(info)
   mask_shape = mask.get_shape().as_list()
   mask_reshape = tf.reshape(mask, [mask_shape[0], mask_shape[1], 1])
   num_batch, max_length, dim_hid = layer_in.get_shape().as_list()
+  # mask_tile [num_batch, max_length, hidden_dim]
   mask_tile = tf.tile(mask_reshape, [1, 1, dim_hid])
-  masked = tf.multiply(mask_tile, layer_in)
-  mean, var = tf.nn.moments(masked, [1])
 
-  mean_trans = tf.transpose(tf.scalar_mul(max_length, mean))
-  scales = tf.reduce_sum(mask, 1)
-  stats = tf.divide(mean_trans, scales)
+  masked = tf.multiply(mask_tile, layer_in)
+
+  mean = tf.reduce_mean(masked, [1])
+  mean_trans = tf.transpose(mean)
+  scales = tf.reduce_sum(mask, 1) / max_length
+  stats = tf.transpose(tf.divide(mean_trans, scales))
 
   use_std = info_dict.get('<UseStd>', 'True').lower() == 'true'
   if use_std:
-    var_trans = tf.transpose(tf.scalar_mul(max_length, var))
-    var_scaled = tf.divide(var_trans, scales)
+    mean_scaled = tf.reshape(stats, [num_batch,-1,dim_hid])
+    sq_diff = tf.squared_difference(masked, tf.stop_gradient(mean_scaled))
+    masked_sq_diff = tf.multiply(mask_tile, sq_diff)
+    var = tf.reduce_mean(masked_sq_diff, [1])
+
+    var_trans = tf.transpose(var)
+    var_scaled = tf.transpose(tf.divide(var_trans, scales))
+    stats = tf.concat([stats, var_scaled], 1)
+
+  layer_out = stats
+
+  return layer_out
+
+
+def pooling2d(info, layer_in, mask, reuse = False):
+  '''
+    layer_in: 2-d np array of size [max_length, hidden_dim]
+    mask: 1-d np array of size [max_length]
+  '''
+  info_dict = info2dict(info)
+  max_length, dim_hid = layer_in.get_shape().as_list()
+  mask_shape = mask.get_shape().as_list()
+  mask_reshape = tf.reshape(mask, [mask_shape[0], 1])
+  mask_tile = tf.tile(mask_reshape, [1, dim_hid])
+  masked = tf.multiply(mask_tile, layer_in)
+  
+  mean = tf.reduce_mean(masked, [0])
+  scales = tf.reduce_sum(mask) / max_length
+  stats = tf.divide(mean, scales)
+
+  use_std = info_dict.get('<UseStd>', 'True').lower() == 'true'
+  if use_std:
+    sq_diff = tf.squared_difference(masked, tf.stop_gradient(stats))
+    masked_sq_diff = tf.multiply(mask_tile, sq_diff)
+    var = tf.reduce_mean(masked_sq_diff, [0])
+    
+    var_scaled = tf.divide(var, scales)
     stats = tf.concat([stats, var_scaled], 0)
 
-  layer_out = tf.transpose(stats)
+  layer_out = tf.reshape(stats, [1, -1])
 
   return layer_out
