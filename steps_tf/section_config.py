@@ -28,6 +28,8 @@ def parse(config_tuple):
                'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers', 
                'nnet_proto']:
       config_parsed[i] = config_dict[i]
+    elif i in ['buckets']: # for list of integers
+      config_parsed[i] = [int(x) for x in config_dict[i].split(',')]
     else:
       raise RuntimeError('section_config.parse: config field %s not supported' % i)
 
