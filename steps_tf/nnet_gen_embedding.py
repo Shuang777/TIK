@@ -10,14 +10,9 @@ from six.moves import configparser
 from nnet_trainer import NNTrainer
 from nnet_queue import NNSeqQueue
 import section_config
+from utils import *
 
 DEVNULL = open(os.devnull, 'w')
-
-def read_int_or_none(file_name):
-  if os.path.isfile(file_name):
-    return int(open(file_name).read())
-  else:
-    return None
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -48,7 +43,7 @@ nnet_conf = section_config.parse(config.items('nnet'))
 nnet_train_conf = section_config.parse(config.items('nnet-train'))
 
 input_dim = int(open(srcdir+'/input_dim').read())
-output_dim = int(open(srcdir+'/output_dim').read())
+output_dim = parse_output_dim(srcdir+'/output_dim')
 embedding_index = int(open(srcdir+'/embedding_index').read())
 splice = feature_conf['context_width']
 
