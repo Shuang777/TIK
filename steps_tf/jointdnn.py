@@ -87,37 +87,50 @@ class JOINTDNN(object):
 
 
   def init_multi(self, graph, nnet_proto_file, seed):
-    raise RuntimeError('Not finished')
     with graph.as_default(), tf.device('/cpu:0'):
-      tf.set_random_seed(seed)
-      feats_holder, mask_holder, labels_holder = nnet.placeholder_seq2class(self.input_dim, 
+      asr_labels_holder, sid_labels_holder = nnet.placeholder_jointdnn(self.input_dim, 
                                                            self.max_length,
-                                                           self.batch_size*self.num_towers)
+                                                           self.batch_size)
       
       keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
+      beta_holder = tf.placeholder(tf.float32, shape=[], name = 'beta')
 
-      logits, embeddings = nnet.inference_seq2class(feats_holder, mask_holder, nnet_proto_file, 
-                                        keep_prob_holder)
+      shared_logits = nnet.inference_dnn(feats_holder, nnet_proto_file+'.shared', keep_prob_holder,
+                                         prefix = 'shared_')
 
-      outputs = tf.nn.softmax(logits)
+      asr_logits = nnet.inference_dnn(shared_logits, nnet_proto_file+'.asr', keep_prob_holder, 
+                                      prefix = 'asr_')
+      sid_logits, embeddings = nnet.inference_seq2class(shared_logits, mask_holder, nnet_proto_file+'.sid', 
+                                            keep_prob_holder, prefix = 'sid_')
+
+      asr_outputs = tf.nn.softmax(asr_logits)
+      sid_outputs = tf.nn.softmax(sid_logits)
 
       tf.add_to_collection('feats_holder', feats_holder)
-      tf.add_to_collection('labels_holder', labels_holder)
+      tf.add_to_collection('asr_labels_holder', asr_labels_holder)
+      tf.add_to_collection('sid_labels_holder', sid_labels_holder)
       tf.add_to_collection('mask_holder', mask_holder)
       tf.add_to_collection('keep_prob_holder', keep_prob_holder)
-      tf.add_to_collection('logits', logits)
-      tf.add_to_collection('outputs', outputs)
+      tf.add_to_collection('beta_holder', beta_holder)
+      tf.add_to_collection('asr_logits', asr_logits)
+      tf.add_to_collection('sid_logits', sid_logits)
+      tf.add_to_collection('asr_outputs', asr_outputs)
+      tf.add_to_collection('sid_outputs', sid_outputs)
       for i in range(len(embeddings)):
         tf.add_to_collection('embeddings', embeddings[i])
 
       self.feats_holder = feats_holder
-      self.labels_holder = labels_holder
+      self.asr_labels_holder = asr_labels_holder
+      self.sid_labels_holder = sid_labels_holder
       self.mask_holder = mask_holder
       self.keep_prob_holder = keep_prob_holder
-      self.logits = logits
-      self.outputs = outputs
+      self.beta_holder = beta_holder
+      self.asr_logits = asr_logits
+      self.sid_logits = sid_logits
+      self.asr_outputs = asr_outputs
+      self.sid_outputs = sid_outputs
       self.embeddings = embeddings
-
+      
       self.tower_logits = []
       self.tower_outputs = []
       for i in range(self.num_towers):
@@ -130,16 +143,29 @@ class JOINTDNN(object):
             tower_feats_holder = feats_holder[tower_start_index:tower_end_index,:,:]
             tower_mask_holder = mask_holder[tower_start_index:tower_end_index]
 
-            tower_logits, embeddings = nnet.inference_seq2class(tower_feats_holder,
-                                              tower_mask_holder, nnet_proto_file, 
-                                              keep_prob_holder, reuse = True)
+            tower_shared_logits = nnet.inference_dnn(tower_feats_holder, nnet_proto_file+'.shared', 
+                                                     keep_prob_holder, prefix = 'shared_', 
+                                                     reuse = True)
 
-            tower_outputs = tf.nn.softmax(tower_logits)
+            tower_asr_logits = nnet.inference_dnn(tower_shared_logits, nnet_proto_file+'.asr', 
+                                                  keep_prob_holder, prefix = 'asr_', reuse = True)
 
-            tf.add_to_collection('tower_logits', tower_logits)
-            tf.add_to_collection('tower_outputs', tower_outputs)
-            self.tower_logits.append(tower_logits)
-            self.tower_outputs.append(tower_outputs)
+            tower_sid_logits, tower_embeddings = nnet.inference_seq2class(tower_shared_logits, 
+                                                    tower_mask_holder, nnet_proto_file+'.sid', 
+                                                    keep_prob_holder, prefix = 'sid_', reuse = True)
+
+            tower_asr_outputs = tf.nn.softmax(asr_logits)
+            tower_sid_outputs = tf.nn.softmax(sid_logits)
+
+            tf.add_to_collection('tower_asr_logits', tower_asr_logits)
+            tf.add_to_collection('tower_asr_outputs', tower_asr_outputs)
+            self.tower_asr_logits.append(tower_asr_logits)
+            self.tower_asr_outputs.append(tower_asr_outputs)
+            
+            tf.add_to_collection('tower_sid_logits', tower_sid_logits)
+            tf.add_to_collection('tower_sid_outputs', tower_sid_outputs)
+            self.tower_sid_logits.append(tower_sid_logits)
+            self.tower_sid_outputs.append(tower_sid_outputs)
 
       # end towers/gpus
       self.init_all_op = tf.global_variables_initializer()
@@ -196,10 +222,15 @@ class JOINTDNN(object):
 
     if load_towers:
       for i in range(self.num_towers):
-        tower_logits = graph.get_collection('tower_logits')[i]
-        tower_outputs = graph.get_collection('tower_outputs')[i]
-        self.tower_logits.append(tower_logits)
-        self.tower_outputs.append(tower_outputs)
+        tower_asr_logits = graph.get_collection('tower_asr_logits')[i]
+        tower_asr_outputs = graph.get_collection('tower_asr_outputs')[i]
+        self.tower_asr_logits.append(tower_asr_logits)
+        self.tower_asr_outputs.append(tower_asr_outputs)
+        
+        tower_sid_logits = graph.get_collection('tower_sid_logits')[i]
+        tower_sid_outputs = graph.get_collection('tower_sid_outputs')[i]
+        self.tower_sid_logits.append(tower_sid_logits)
+        self.tower_sid_outputs.append(tower_sid_outputs)
 
 
   def init_training(self, graph, optimizer_conf, learning_rate = None):
@@ -253,11 +284,10 @@ class JOINTDNN(object):
 
  
   def init_training_multi(self, graph, optimizer_conf):
-    # TODO
-    raise RuntimeError("Not finished")
     tower_losses = []
     tower_grads = []
-    tower_accs = []
+    tower_asr_accs = []
+    tower_sid_accs = []
 
     with graph.as_default(), tf.device('/cpu:0'):
       
@@ -274,19 +304,30 @@ class JOINTDNN(object):
             tower_start_index = i*self.batch_size
             tower_end_index = (i+1)*self.batch_size
 
-            tower_labels_holder = self.labels_holder[tower_start_index:tower_end_index]
+            tower_asr_labels_holder = self.asr_labels_holder[tower_start_index:tower_end_index]
+            tower_sid_labels_holder = self.sid_labels_holder[tower_start_index:tower_end_index]
+            tower_mask_holder = self.mask_holder[tower_start_index:tower_end_index]
 
-            loss = nnet.loss_dnn(self.tower_logits[i], tower_labels_holder)
+            asr_loss = nnet.loss_dnn(self.tower_asr_logits[i], tower_asr_labels_holder)
+            sid_loss = nnet.loss_dnn(self.tower_sid_logits[i], tower_sid_labels_holder)
+            loss = asr_loss + self.beta_holder * sid_loss
             tower_losses.append(loss)
+
             grads = nnet.get_gradients(opt, loss)
             tower_grads.append(grads)
-            eval_acc = nnet.evaluation_dnn(self.tower_logits[i], tower_labels_holder)
-            tower_accs.append(eval_acc)
+
+            asr_eval_acc = nnet.evaluation_dnn(self.tower_asr_logits[i], tower_asr_labels_holder, 
+                                               tower_mask_holder)
+            sid_eval_acc = nnet.evaluation_dnn(self.tower_sid_logits[i], tower_sid_labels_holder)
+
+            tower_asr_accs.append(asr_eval_acc)
+            tower_sid_accs.append(sid_eval_acc)
 
       grads = nnet.average_gradients(tower_grads)
       train_op = nnet.apply_gradients(optimizer_conf, opt, grads)
       losses = tf.reduce_sum(tower_losses)
-      accs = tf.reduce_sum(tower_accs)
+      asr_accs = tf.reduce_sum(tower_asr_accs)
+      sid_accs = tf.reduce_sum(tower_sid_accs)
       
       # we need to intialize variables that are newly added
       variables_after = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
@@ -296,7 +337,8 @@ class JOINTDNN(object):
     self.loss = losses
     self.learning_rate_holder = learning_rate_holder
     self.train_op = train_op
-    self.eval_acc = accs
+    self.asr_eval_acc = asr_accs
+    self.sid_eval_acc = sid_accs
 
     self.init_train_op = init_train_op
 
@@ -304,9 +346,14 @@ class JOINTDNN(object):
   def get_init_train_op(self):
     return self.init_train_op
 
-
   def get_loss(self):
     return self.loss
+
+  def get_asr_loss(self):
+    return self.asr_loss
+
+  def get_sid_loss(self):
+    return self.sid_loss
 
   def get_asr_eval_acc(self):
     return self.asr_eval_acc
@@ -346,14 +393,19 @@ class JOINTDNN(object):
     
     if train_params is not None:
       feed_dict.update({
-                  self.learning_rate_holder: train_params['learning_rate'],
+                  self.learning_rate_holder: train_params.get('learning_rate', 0.0),
                   self.keep_prob_holder: train_params.get('keep_prob', 1.0),
                   self.beta_holder: train_params.get('beta', 0.0)})
 
     return feed_dict, x is not None
 
+  def prep_forward_feed(self, x):
 
-  def prep_forward_feed(self, x, mask):
+    feed_dict = { self.feats_holder: x}
+
+    return feed_dict
+    
+  def prep_forward_feed_sid(self, x, mask):
 
     feed_dict = { self.feats_holder: x,
                   self.mask_holder: mask}
