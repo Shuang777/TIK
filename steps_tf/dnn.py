@@ -247,16 +247,16 @@ class DNN(object):
     return self.train_op
 
 
-  def prep_feed(self, data_gen, train_params = None):
+  def prep_feed(self, data_gen, params = None):
     x, y = data_gen.get_batch_frames()
 
     feed_dict = { self.feats_holder: x,
                   self.labels_holder: y,
                   self.keep_prob_holder: 1.0}
 
-    if train_params is not None:
+    if params is not None:
       feed_dict.update({
-                  self.learning_rate_holder: train_params['learning_rate'],
+                  self.learning_rate_holder: params.get('learning_rate', 0.0),
                   self.keep_prob_holder: 1.0})
 
     return feed_dict, x is not None

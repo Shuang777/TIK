@@ -300,7 +300,7 @@ class SEQ2CLASS(object):
     return self.embeddings[index]
 
 
-  def prep_feed(self, data_gen, train_params):
+  def prep_feed(self, data_gen, params):
 
     x, y, mask = data_gen.get_batch_utterances()
 
@@ -310,11 +310,11 @@ class SEQ2CLASS(object):
                   self.keep_prob_holder: 1.0,
                   self.beta_holder: 0.0} 
     
-    if train_params is not None:
+    if params is not None:
       feed_dict.update({
-                  self.learning_rate_holder: train_params['learning_rate'],
-                  self.keep_prob_holder: train_params.get('keep_prob', 1.0),
-                  self.beta_holder: train_params.get('beta', 0.0)})
+                  self.learning_rate_holder: params.get('learning_rate', 0.0),
+                  self.keep_prob_holder: params.get('keep_prob', 1.0),
+                  self.beta_holder: params.get('beta', 0.0)})
 
     return feed_dict, x is not None
 

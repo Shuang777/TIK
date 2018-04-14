@@ -282,7 +282,7 @@ class LSTM(object):
     return self.outputs
 
 
-  def prep_feed(self, data_gen, train_params = None):
+  def prep_feed(self, data_gen, params = None):
     x, y, seq_length, mask = data_gen.get_batch_utterances()
 
     feed_dict = { self.feats_holder: x,
@@ -292,11 +292,11 @@ class LSTM(object):
                   self.keep_in_prob_holder: 1.0,
                   self.keep_out_prob_holder: 1.0}
 
-    if train_params is not None:
+    if params is not None:
       feed_dict.update({
-                  self.learning_rate_holder: train_params['learning_rate'],
-                  self.keep_in_prob_holder: train_params.get('keep_in_prob', 1.0),
-                  self.keep_out_prob_holder: train_params.get('keep_out_prob', 1.0)})
+                  self.learning_rate_holder: params.get('learning_rate', 0.0),
+                  self.keep_in_prob_holder: params.get('keep_in_prob', 1.0),
+                  self.keep_out_prob_holder: params.get('keep_out_prob', 1.0)})
 
     return feed_dict, x is not None
 
