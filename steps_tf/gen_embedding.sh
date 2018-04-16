@@ -73,9 +73,8 @@ if [ $stage -le 2 ]; then
   # even if they are otherwise the same as the utterance-level ones.
   echo "$0: computing mean of iVectors for each speaker and length-normalizing"
   $cmd $dir/log/speaker_mean.log \
-    ivector-normalize-length scp:$dir/xvector.scp  ark:- \| \
-    ivector-mean ark:$data/spk2utt ark:- ark:- ark,t:$dir/num_utts.ark \| \
-    ivector-normalize-length ark:- ark,scp:$dir/spk_xvector.ark,$dir/spk_xvector.scp
+    ivector-mean ark:$data/spk2utt scp:$dir/xvector.scp \
+    ark,scp:$dir/spk_xvector.ark,$dir/spk_xvector.scp ark,t:$dir/num_utts.ark
 fi
 
 exit 0;
