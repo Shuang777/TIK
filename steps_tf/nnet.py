@@ -61,6 +61,23 @@ def placeholder_jointdnn(input_dim, max_length, batch_size):
   return feats_holder, mask_holder, asr_labels_holder, sid_labels_holder
 
 
+def placeholder_uttbuckets(input_dim, bucket_sizes):
+  '''
+  outputs:
+    bucket_feats_holders: list of place_holder of size [bucket, input_dim]
+    bucket_mask_holders: list of place_holder of size [bucket]
+  '''
+  bucket_feats_holders = []
+  bucket_mask_holders = []
+  for length in bucket_sizes:
+    feats_holder = tf.placeholder(tf.float32, shape=(length, input_dim), 
+                                  name='bucket_feature_'+str(length))
+    bucket_feats_holders.append(feats_holder)
+    mask_holder = tf.placeholder(tf.float32, shape=(length), name='bucket_mask_'+str(length))
+    bucket_mask_holders.append(mask_holder)
+  return bucket_feats_holders,bucket_mask_holders
+
+
 def inference_dnn(feats_holder, nnet_proto_file, keep_prob_holder = None, 
                   reuse = False, prefix = ''):
   '''

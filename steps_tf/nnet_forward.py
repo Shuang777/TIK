@@ -47,7 +47,7 @@ optimizer_conf = section_config.parse(config.items('optimizer'))
 nnet_train_conf = section_config.parse(config.items('nnet-train'))
 
 input_dim = int(open(srcdir+'/input_dim').read())
-output_dim = parse_output_dim(srcdir+'/output_dim')
+output_dim = parse_int_or_list(srcdir+'/output_dim')
 max_length = feature_conf.get('max_length', None)
 jitter_window = feature_conf.get('jitter_window', None)
 splice = feature_conf['context_width']
@@ -121,3 +121,4 @@ for uid, feats in reader:
   if args.verbose and count % 10 == 0:
     logger.info("LOG (nnet_forward.py) %d utterances processed" % count)
 
+logger.info("LOG (nnet_forward.py) Total %d utterances processed" % count)

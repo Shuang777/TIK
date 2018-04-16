@@ -4,7 +4,8 @@ import make_nnet_proto
 
 class JOINTDNN(object):
 
-  def __init__(self, input_dim, output_dim, batch_size, max_length, num_towers = 1):
+  def __init__(self, input_dim, output_dim, batch_size, max_length, 
+               num_towers = 1, buckets = None):
     self.type = 'jointdnn'
     self.input_dim = input_dim
     self.output_dim = output_dim
@@ -14,6 +15,9 @@ class JOINTDNN(object):
     self.batch_size = batch_size
     self.max_length = max_length
     self.num_towers = num_towers
+    self.buckets = buckets
+    if buckets is None:
+      self.buckets = [max_length]
   
   def get_input_dim(self):
     return self.input_dim
@@ -45,6 +49,7 @@ class JOINTDNN(object):
                                                            self.batch_size)
       
       keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
+
       beta_holder = tf.placeholder(tf.float32, shape=[], name = 'beta')
 
       shared_logits = nnet.inference_dnn(feats_holder, nnet_proto_file+'.shared', keep_prob_holder,
@@ -52,11 +57,25 @@ class JOINTDNN(object):
 
       asr_logits = nnet.inference_dnn(shared_logits, nnet_proto_file+'.asr', keep_prob_holder, 
                                       prefix = 'asr_')
-      sid_logits, embeddings = nnet.inference_seq2class(shared_logits, mask_holder, nnet_proto_file+'.sid', 
+
+      sid_logits, _ = nnet.inference_seq2class(shared_logits, mask_holder, nnet_proto_file+'.sid', 
                                             keep_prob_holder, prefix = 'sid_')
 
       asr_outputs = tf.nn.softmax(asr_logits)
       sid_outputs = tf.nn.softmax(sid_logits)
+
+      bucket_feats_holders, bucket_mask_holders = nnet.placeholder_uttbuckets(self.input_dim,
+                                                                  self.buckets)
+      # embeddings stored as [embedding_bucket1_layer1, embedding_bucket1_layer2, 
+      #                       embedding_bucket2_layer1, embedding_bucket2_layer2,...]
+      bucket_embeddings = []
+      for x,y in zip(bucket_feats_holders, bucket_mask_holders):
+        shared_logits = nnet.inference_dnn(x, nnet_proto_file+'.shared', keep_prob_holder, 
+                                           prefix = 'shared_', reuse = True)
+        _, embeddings = nnet.inference_seq2class(shared_logits, y, nnet_proto_file+'.sid',
+                                           keep_prob_holder, prefix = 'sid_', reuse = True)
+        
+        bucket_embeddings.extend(embeddings)    # not a good way to store all the embeddings
 
       tf.add_to_collection('feats_holder', feats_holder)
       tf.add_to_collection('asr_labels_holder', asr_labels_holder)
@@ -68,8 +87,11 @@ class JOINTDNN(object):
       tf.add_to_collection('sid_logits', sid_logits)
       tf.add_to_collection('asr_outputs', asr_outputs)
       tf.add_to_collection('sid_outputs', sid_outputs)
-      for i in range(len(embeddings)):
-        tf.add_to_collection('embeddings', embeddings[i])
+      for x,y in zip(bucket_feats_holders, bucket_mask_holders):
+        tf.add_to_collection('bucket_feats_holders', x)
+        tf.add_to_collection('bucket_mask_holders', y)
+      for embedding in bucket_embeddings:
+        tf.add_to_collection('bucket_embeddings', embedding)
 
       self.feats_holder = feats_holder
       self.asr_labels_holder = asr_labels_holder
@@ -81,7 +103,11 @@ class JOINTDNN(object):
       self.sid_logits = sid_logits
       self.asr_outputs = asr_outputs
       self.sid_outputs = sid_outputs
-      self.embeddings = embeddings
+      # bucket related
+      self.bucket_feats_holders = bucket_feats_holders
+      self.bucket_mask_holders = bucket_mask_holders
+      self.bucket_embeddings = bucket_embeddings
+      self.num_embeddings = len(self.bucket_embeddings) / len(self.bucket_feats_holders)
       
       self.init_all_op = tf.global_variables_initializer()
 
@@ -197,9 +223,17 @@ class JOINTDNN(object):
     self.asr_outputs = graph.get_collection('asr_outputs')[0]
     self.sid_logits = graph.get_collection('sid_logits')[0]
     self.sid_outputs = graph.get_collection('sid_outputs')[0]
-    self.embeddings = []
-    for i in range(len(graph.get_collection('embeddings'))):
-      self.embeddings.append(graph.get_collection('embeddings')[i])
+    self.bucket_embeddings = []
+    self.bucket_feats_holders = []
+    self.bucket_mask_holders = []
+    for i in range(len(graph.get_collection('bucket_embeddings'))):
+      self.bucket_embeddings.append(graph.get_collection('bucket_embeddings')[i])
+    for i in range(len(graph.get_collection('bucket_feats_holders'))):
+      self.bucket_feats_holders.append(graph.get_collection('bucket_feats_holders')[i])
+    for i in range(len(graph.get_collection('bucket_mask_holders'))):
+      self.bucket_mask_holders.append(graph.get_collection('bucket_mask_holders')[i])
+
+    self.num_embeddings = len(self.bucket_embeddings) / len(self.bucket_feats_holders)
 
   
   def read_multi(self, graph, load_towers):
@@ -405,9 +439,12 @@ class JOINTDNN(object):
 
     return feed_dict
     
-  def prep_forward_feed_sid(self, x, mask):
+  def prep_forward_sid(self, x, mask, bucket_id, embedding_index):
+    bucket_feats_holder = self.bucket_feats_holders[bucket_id]
+    bucket_mask_holder = self.bucket_mask_holders[bucket_id]
+    embedding = self.bucket_embeddings[self.num_embeddings * bucket_id + embedding_index]
 
-    feed_dict = { self.feats_holder: x,
-                  self.mask_holder: mask}
+    feed_dict = { bucket_feats_holder: x,
+                  bucket_mask_holder: mask}
 
-    return feed_dict
+    return feed_dict, embedding

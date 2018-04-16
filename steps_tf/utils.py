@@ -6,9 +6,9 @@ def read_int_or_none(file_name):
   else:
     return None
 
-def parse_output_dim(file_name):
+def parse_int_or_list(file_name):
   output = open(file_name).read()
-  if output[0] == '(':
+  if output[0] == '(' or output[0] == '[':
     output = output[1:-1].split(',')
     output_dim = [int(x) for x in output]
   else:

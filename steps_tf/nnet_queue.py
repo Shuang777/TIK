@@ -33,7 +33,7 @@ class NNSeqQueue(object):
       mask.append(np.ones(self.max_length))
       start_index += self.max_length
 
-    if start_index + self.max_length > len(feats):
+    if start_index < len(feats):
       # last segment, we shift a bit so we have a full segment
       start_index = max(len(feats) - self.max_length, 0)
       num_zeros = start_index + self.max_length - len(feats)

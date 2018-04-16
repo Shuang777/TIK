@@ -39,6 +39,9 @@ class NNTrainer(object):
     self.max_length = feature_conf.get('max_length', 0)
     self.jitter_window = feature_conf.get('jitter_window', 0)
 
+    #nnet training & decoding
+    self.buckets = nnet_conf.get('buckets', None)
+
     # for learning rate schedule. None in default (means scheduler outside)
     # otherwise use prep_learning_rate
     self.global_step = None
@@ -63,7 +66,7 @@ class NNTrainer(object):
       self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     elif self.arch == 'jointdnn':
       self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
-                            buckets = nnet_conf.get('buckets', None))
+                            buckets = self.buckets)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
  
@@ -74,6 +77,10 @@ class NNTrainer(object):
 
   def get_batch_size(self):
     return self.batch_size
+
+
+  def get_buckets(self):
+    return self.buckets
 
 
   def make_proto(self, nnet_conf, nnet_proto_file):
@@ -614,15 +621,63 @@ class NNTrainer(object):
     return posts[0:len(feats),:]
 
 
-  def gen_embedding(self, feats, mask, embedding_index = 0):
+  def gen_embedding(self, feats, mask, bucket_id = 0, embedding_index = 0):
     if self.arch == 'seq2class':
       feed_dict = self.model.prep_forward_feed(feats, mask)
-      embeddings = self.sess.run(self.model.get_embedding(embedding_index), feed_dict=feed_dict)
+      embedding = self.sess.run(self.model.get_embedding(embedding_index), feed_dict=feed_dict)
     elif self.arch == 'jointdnn':
-      feed_dict = self.model.prep_forward_feed_sid(feats, mask)
-      embeddings = self.sess.run(self.model.get_embedding(embedding_index), feed_dict=feed_dict)
+      feed_dict, embedding_layer = self.model.prep_forward_sid(feats, mask, 
+                                                               bucket_id, embedding_index)
+      embedding = self.sess.run(embedding_layer, feed_dict=feed_dict)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
-    return embeddings
+    return embedding
 
+
+  def get_bucket_id(self, length):
+    # return the smallest possible bucket that fits length
+    bucket_id = 0
+    while bucket_id < len(self.buckets)-1 and length > self.buckets[bucket_id]:
+      bucket_id += 1
+    return bucket_id
+
+
+  def gen_utt_embedding(self, feats, embedding_index = 0):
+    bucket_id = self.get_bucket_id(len(feats))
+    bucket_size = self.buckets[bucket_id]
+    start_index = 0
+    embedding_acc = None
+    embedding_count = 0
+
+    mask = np.ones(bucket_size)
+    while start_index + bucket_size <= len(feats):
+      end_index = start_index + bucket_size
+      bucket_feats = feats[start_index:end_index]
+      embedding = self.gen_embedding(bucket_feats, mask, bucket_id, embedding_index)
+      if embedding_acc is None:
+        embedding_acc = embedding
+      else:
+        embedding_acc += embedding
+      embedding_count += 1
+      start_index = end_index
+      
+    # last one, we shift back a bit, if possible
+    if start_index < len(feats):
+      start_index = max(0, len(feats) - bucket_size)
+      num_zeros = start_index + bucket_size - len(feats)
+      zeros2pad = np.zeros((num_zeros, len(feats[0])))
+      if num_zeros == 0:
+        bucket_feats = feats[start_index:]
+      else:
+        bucket_feats = np.concatenate((feats[start_index:],zeros2pad))
+        mask = np.append(np.ones(len(feats)-start_index), np.zeros(num_zeros))
+      embedding = self.gen_embedding(bucket_feats, mask, bucket_id, embedding_index)
+      if embedding_acc is None:
+        embedding_acc = embedding
+      else:
+        embedding_acc += embedding
+      embedding_count += 1
+
+    embedding = embedding_acc[0] / embedding_count
+    return embedding
 

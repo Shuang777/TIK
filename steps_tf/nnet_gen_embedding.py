@@ -43,7 +43,7 @@ nnet_conf = section_config.parse(config.items('nnet'))
 nnet_train_conf = section_config.parse(config.items('nnet-train'))
 
 input_dim = int(open(srcdir+'/input_dim').read())
-output_dim = parse_output_dim(srcdir+'/output_dim')
+output_dim = parse_int_or_list(srcdir+'/output_dim')
 embedding_index = int(open(srcdir+'/embedding_index').read())
 splice = feature_conf['context_width']
 
@@ -57,7 +57,7 @@ logger.info("use-gpu: %s", str(args.use_gpu))
 num_gpus = nnet_train_conf.get('num_gpus', 1)
 
 logger.info("initializing the graph")
-nnet = NNTrainer(input_dim, output_dim, 
+nnet = NNTrainer(nnet_conf, input_dim, output_dim, 
                  feature_conf, num_gpus = num_gpus, use_gpu = args.use_gpu,
                  gpu_id = args.gpu_id)
 
@@ -89,14 +89,15 @@ count = 0
 reader = kaldi_io.SequentialBaseFloatMatrixReader(feats)
 writer = kaldi_io.BaseFloatVectorWriter(args.wspecifier)
 
-nnet_queue = NNSeqQueue(nnet, writer, embedding_index = embedding_index)
-
 for uid, feats in reader:
 
-  nnet_queue.add2queue(uid, feats)
+  xvector = nnet.gen_utt_embedding(feats, embedding_index)
+  
+  writer.write(uid, xvector)
 
   count += 1
   if args.verbose and count % 100 == 0:
     logger.info("LOG (nnet_gen_embedding.py) %d utterances processed" % count)
 
-nnet_queue.close()
+logger.info("LOG (nnet_gen_embedding.py) Total %d utterances processed" % count)
+
