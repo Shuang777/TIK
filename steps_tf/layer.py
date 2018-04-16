@@ -226,13 +226,13 @@ def pooling3d(info, layer_in, mask, reuse = False):
   mask_reshape = tf.reshape(mask, [mask_shape[0], mask_shape[1], 1])
   num_batch, max_length, dim_hid = layer_in.get_shape().as_list()
   # mask_tile [num_batch, max_length, hidden_dim]
-  mask_tile = tf.tile(mask_reshape, [1, 1, dim_hid])
+  mask_tile = tf.stop_gradient(tf.tile(mask_reshape, [1, 1, dim_hid]))
 
   masked = tf.multiply(mask_tile, layer_in)
 
   mean = tf.reduce_mean(masked, [1])
   mean_trans = tf.transpose(mean)
-  scales = tf.reduce_sum(mask, 1) / max_length
+  scales = tf.stop_gradient(tf.reduce_sum(mask, 1) / max_length)
   stats = tf.transpose(tf.divide(mean_trans, scales))
 
   use_std = info_dict.get('<UseStd>', 'True').lower() == 'true'
@@ -260,11 +260,11 @@ def pooling2d(info, layer_in, mask, reuse = False):
   max_length, dim_hid = layer_in.get_shape().as_list()
   mask_shape = mask.get_shape().as_list()
   mask_reshape = tf.reshape(mask, [mask_shape[0], 1])
-  mask_tile = tf.tile(mask_reshape, [1, dim_hid])
+  mask_tile = tf.stop_gradient(tf.tile(mask_reshape, [1, dim_hid]))
   masked = tf.multiply(mask_tile, layer_in)
   
   mean = tf.reduce_mean(masked, [0])
-  scales = tf.reduce_sum(mask) / max_length
+  scales = tf.stop_gradient(tf.reduce_sum(mask) / max_length)
   stats = tf.divide(mean, scales)
 
   use_std = info_dict.get('<UseStd>', 'True').lower() == 'true'
