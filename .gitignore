@@ -1,8 +1,8 @@
 steps_tf/*.pyc
 steps_tf/__pycache__
-steps_tf/kaldi_io/*.pyc
-steps_tf/kaldi_io/__pycache__
 steps_tf/kaldi_io/*.depend.mk
 steps_tf/kaldi_io/*.so
+steps_tf/*/*.pyc
+steps_tf/*/__pycache__
 
 bin/pick-gpu
