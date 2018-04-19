@@ -93,12 +93,14 @@ scheduler_conf = section_config.parse(config.items('scheduler'))
 feature_conf = section_config.parse(config.items('feature'))
 
 nnet_arch = nnet_conf['nnet_arch']
+buckets_tr = nnet_conf.get('buckets_tr', None)    # training buckets
 nnet_proto_file = general_conf.get('nnet_proto', None)
 summary_dir = exp+'/summary'
 
 if nnet_arch in ['lstm', 'bn', 'dnn']:
   # separate data into 10% cv and 90% training
-  Popen(['utils/subset_data_dir_tr_cv.sh', '--cv-spk-percent', '10', data, exp+'/tr90', exp+'/cv10']).communicate()
+  Popen(['myutils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', '--spk', 'true',
+          data, exp+'/tr90', exp+'/cv10']).communicate()
 
   # copy necessary files
   if os.path.exists(ali_dir+'/final.mat'):
@@ -174,10 +176,10 @@ elif nnet_arch == 'seq2class':
   cv_gen = SeqDataGenerator(data, utt2label_valid, None, exp, 'valid', 
                             feature_conf, num_gpus = num_gpus)
 elif nnet_arch == 'jointdnn':
-  tr_gen = JointDNNDataGenerator(exp+'/tr90', utt2label_train, ali_labels, 
-                                 exp, 'train', feature_conf, shuffle=True)
+  tr_gen = JointDNNDataGenerator(exp+'/tr90', utt2label_train, ali_labels, exp, 
+                                 'train', feature_conf, shuffle=True, buckets=buckets_tr)
   cv_gen = JointDNNDataGenerator(exp+'/cv10', utt2label_valid, ali_labels, 
-                                 exp, 'cv', feature_conf)
+                                 exp, 'cv', feature_conf, buckets=buckets_tr)
 else:
   raise RuntimeError("nnet_arch %s not supported yet", nnet_arch)
 

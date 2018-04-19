@@ -12,7 +12,7 @@ DEVNULL = open(os.devnull, 'w')
 
 class JointDNNDataGenerator:
   def __init__ (self, data, sid_labels, asr_labels, exp, name, conf, 
-                seed=777, shuffle=False, loop=False, num_gpus = 1):
+                seed=777, shuffle=False, loop=False, num_gpus = 1, buckets=None):
     
     self.data = data
     self.sid_labels = sid_labels
@@ -25,8 +25,12 @@ class JointDNNDataGenerator:
     self.max_length = conf.get('max_length', 400)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
+    self.buckets = buckets
     self.loop = loop    # keep looping over dataset
     
+    if self.buckets is None:    # we only have one bucket in this case
+      self.buckets = [self.max_length]
+
     self.max_split_data_size = 2000 ## These many utterances are loaded into memory at once.
 
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
@@ -86,13 +90,28 @@ class JointDNNDataGenerator:
                     feat_dim_delta_multiple * (2*self.splice+1)
     self.split_data_counter = 0
     
+    self.xs = []
+    self.ys = []
+    self.zs = []
+    self.masks = []
+    self.batch_pointers = []
 
-    self.x = numpy.empty ((0, self.max_length, self.feat_dim))  # features
-    self.y = numpy.empty ((0, self.max_length), dtype='int32')  # asr_labels
-    self.z = numpy.empty (0, dtype='int32')                     # sid_labels
-    self.mask = numpy.empty ((0, self.max_length), dtype='float32')
+    for length in self.buckets:
+      x = numpy.empty ((0, length, self.feat_dim))  # features
+      y = numpy.empty ((0, length), dtype='int32')  # asr_labels
+      z = numpy.empty (0, dtype='int32')                     # sid_labels
+      mask = numpy.empty ((0, length), dtype='float32')
+
+      self.xs.append(x)
+      self.ys.append(y)
+      self.zs.append(z)
+      self.masks.append(mask)
     
-    self.batch_pointer = 0
+      self.batch_pointers.append(0)
+
+    self.bucket_queue = numpy.empty(0, dtype='int32')
+    self.bucket_queue_pointer = 0
+
     
   def get_feat_dim(self):
     return self.feat_dim
@@ -104,9 +123,10 @@ class JointDNNDataGenerator:
 
   def has_data(self):
   # has enough data for next batch
-    if self.loop or self.split_data_counter != self.num_split:     # we always have data if in loop mode
+    if self.loop or self.split_data_counter != self.num_split:     
+      # we always have data if in loop mode; or we haven't reach num_split
       return True
-    elif self.batch_pointer + self.batch_size >= len(self.x):
+    elif self.bucket_queue_pointer >= len(self.bucket_queue):
       return False
     return True
      
@@ -155,7 +175,7 @@ class JointDNNDataGenerator:
     return (feat_list, asr_label_list, sid_label_list)
 
 
-  def pack_utt_data(self, features, asr_labels, sid_labels):
+  def pack_utt_data(self, features, asr_labels, sid_labels, bucket_id):
     '''
     for each utterance, we use a rolling window to generate enough segments for speaker ID modeling
     input:
@@ -173,13 +193,22 @@ class JointDNNDataGenerator:
     asr_labels_packed = []
     sid_labels_packed = []
     mask = []
-    max_length = self.max_length
+    max_length = self.buckets[bucket_id]
     sliding_window = self.sliding_window
 
     for feat, asr_lab, sid_lab in zip(features, asr_labels, sid_labels):
 
       assert len(feat) == len(asr_lab)
       start_index = 0
+
+      if bucket_id != 0 and len(feat) < max_length:
+        # if len(feat) < max_length, we don't add it into this bucket, 
+        # only if the smallest bucket is still bigger than len(feat)
+        # i.e. we have buckets of size 3, 5, 10
+        # then frames of 1,2,3,4,5,6 ... goes to bucket 3
+        # frames of 5,6,7,... goes to bucket 5
+        # frames of 10,11,12,... goes to bucket 10
+        continue
 
       while start_index + max_length < len(feat):
         # cut utterances into pieces
@@ -200,11 +229,12 @@ class JointDNNDataGenerator:
         mask.append(numpy.append(numpy.ones(len(feat)-start_index), numpy.zeros(num_zero)))
         sid_labels_packed.append(sid_lab)
 
+    num_batch2add = len(sid_labels_packed)
     features_packed = numpy.array(features_packed)
     asr_labels_packed = numpy.array(asr_labels_packed)
     sid_labels_packed = numpy.array(sid_labels_packed)
 
-    return features_packed, asr_labels_packed, sid_labels_packed, mask
+    return features_packed, asr_labels_packed, sid_labels_packed, mask, num_batch2add
 
 
   def get_batch_utterances (self):
@@ -215,45 +245,67 @@ class JointDNNDataGenerator:
       mask: np matrix [batch_size, max_length]
     '''
     # read split data until we have enough for this batch
-    while (self.batch_pointer + self.batch_size >= len(self.x)):
+    while self.bucket_queue_pointer >= len(self.bucket_queue):
       if not self.loop and self.split_data_counter == self.num_split:
         # not loop mode and we arrive the end, do not read anymore
         # let's just throw away the last few samples
-        return None, None, None, None
+        return None, None, None, None, None
 
-      x, y, z = self.get_next_split_data()
-      x_packed, y_packed, z_packed, mask = self.pack_utt_data(x, y, z)
+      feats, asr_labels, sid_labels = self.get_next_split_data()
 
-      self.x = numpy.concatenate((self.x[self.batch_pointer:], x_packed))
-      self.y = numpy.concatenate((self.y[self.batch_pointer:], y_packed))
-      self.z = numpy.append(self.z[self.batch_pointer:], z_packed)
-      self.mask = numpy.concatenate((self.mask[self.batch_pointer:], mask))
+      buckets2extend = []
+      for bucket_id in xrange(len(self.buckets)):
+        x_packed, y_packed, z_packed, \
+          mask_packed, num_segments2add = self.pack_utt_data(feats, asr_labels, 
+                                                          sid_labels, bucket_id)
+        x = self.xs[bucket_id]
+        y = self.ys[bucket_id]
+        z = self.zs[bucket_id]
+        mask = self.masks[bucket_id]
+
+        x = numpy.concatenate((x[self.batch_pointers[bucket_id]:], x_packed))
+        y = numpy.concatenate((y[self.batch_pointers[bucket_id]:], y_packed))
+        z = numpy.append(z[self.batch_pointers[bucket_id]:], z_packed)
+        mask = numpy.concatenate((mask[self.batch_pointers[bucket_id]:], mask_packed))
+        
+        ## Shuffle data, utterance base
+        # data is already shuffled. we don't need to do that again
+        randomInd = numpy.array(range(len(x)))
+        numpy.random.shuffle(randomInd)
+        self.xs[bucket_id] = x[randomInd]
+        self.ys[bucket_id] = y[randomInd]
+        self.zs[bucket_id] = z[randomInd]
+        self.masks[bucket_id] = mask[randomInd]
       
-      self.batch_pointer = 0
+        self.batch_pointers[bucket_id] = 0
+        num_batches2add = num_segments2add / self.batch_size
+        buckets2extend.extend([bucket_id]*num_batches2add)
 
-      ## Shuffle data, utterance base
-      # data is already shuffled. we don't need to do that again
-      randomInd = numpy.array(range(len(self.x)))
-      numpy.random.shuffle(randomInd)
-      self.x = self.x[randomInd]
-      self.y = self.y[randomInd]
-      self.z = self.z[randomInd]
-      self.mask = self.mask[randomInd]
+      numpy.random.shuffle(buckets2extend)
+      self.bucket_queue = numpy.append(self.bucket_queue[self.bucket_queue_pointer:], 
+                                       buckets2extend)
+      self.bucket_queue_pointer = 0
 
       self.split_data_counter += 1
       if self.loop and self.split_data_counter == self.num_split:
         self.split_data_counter = 0
     
-    x_mini = self.x[self.batch_pointer:self.batch_pointer+self.batch_size]
-    y_mini = self.y[self.batch_pointer:self.batch_pointer+self.batch_size]
-    z_mini = self.z[self.batch_pointer:self.batch_pointer+self.batch_size]
-    mask_mini = self.mask[self.batch_pointer:self.batch_pointer+self.batch_size]
+    this_bucket = self.bucket_queue[self.bucket_queue_pointer]
+    this_batch_pointer = self.batch_pointers[this_bucket]
 
-    self.batch_pointer += self.batch_size
+    x_mini = self.xs[this_bucket][this_batch_pointer:this_batch_pointer+self.batch_size]
+    y_mini = self.ys[this_bucket][this_batch_pointer:this_batch_pointer+self.batch_size]
+    z_mini = self.zs[this_bucket][this_batch_pointer:this_batch_pointer+self.batch_size]
+    mask_mini = self.masks[this_bucket][this_batch_pointer:this_batch_pointer+self.batch_size]
+
+    self.batch_pointers[this_bucket] += self.batch_size
+    self.bucket_queue_pointer += 1
+
     self.last_batch_utts = len(y_mini)
     self.last_batch_frames = mask_mini.sum()
 
-    return x_mini, y_mini, z_mini, mask_mini
+    return x_mini, y_mini, z_mini, mask_mini, this_bucket
+
 
   def get_batch_size(self):
     return self.batch_size

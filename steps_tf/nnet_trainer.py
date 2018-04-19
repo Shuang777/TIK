@@ -40,6 +40,7 @@ class NNTrainer(object):
     self.jitter_window = feature_conf.get('jitter_window', 0)
 
     #nnet training & decoding
+    self.buckets_tr = nnet_conf.get('buckets_tr', None)
     self.buckets = nnet_conf.get('buckets', None)
 
     # for learning rate schedule. None in default (means scheduler outside)
@@ -66,7 +67,7 @@ class NNTrainer(object):
       self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     elif self.arch == 'jointdnn':
       self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
-                            buckets = self.buckets)
+                            buckets_tr = self.buckets_tr, buckets = self.buckets)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
  

@@ -5,7 +5,7 @@ import make_nnet_proto
 class JOINTDNN(object):
 
   def __init__(self, input_dim, output_dim, batch_size, max_length, 
-               num_towers = 1, buckets = None):
+               num_towers = 1, buckets_tr = None, buckets = None):
     self.type = 'jointdnn'
     self.input_dim = input_dim
     self.output_dim = output_dim
@@ -15,6 +15,7 @@ class JOINTDNN(object):
     self.batch_size = batch_size
     self.max_length = max_length
     self.num_towers = num_towers
+    self.buckets_tr = buckets_tr
     self.buckets = buckets
     if buckets is None:
       self.buckets = [max_length]
@@ -416,7 +417,7 @@ class JOINTDNN(object):
 
   def prep_feed(self, data_gen, train_params):
 
-    x, y, z, mask = data_gen.get_batch_utterances()
+    x, y, z, mask, bucket_id = data_gen.get_batch_utterances()
 
     feed_dict = { self.feats_holder: x,
                   self.asr_labels_holder: y,
