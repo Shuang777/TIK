@@ -25,13 +25,15 @@ class JointDNNDataGenerator:
     self.max_length = conf.get('max_length', 400)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
+    self.fit_buckets = conf.get('fit_buckets', True)
     self.buckets = buckets
     self.loop = loop    # keep looping over dataset
     
     if self.buckets is None:    # we only have one bucket in this case
       self.buckets = [self.max_length]
 
-    self.max_split_data_size = 2000 ## These many utterances are loaded into memory at once.
+    ## These many utterances are loaded into memory at once.
+    self.max_split_data_size = conf.get('max_split_data_size', 2000) 
 
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
@@ -210,6 +212,12 @@ class JointDNNDataGenerator:
         # frames of 10,11,12,... goes to bucket 10
         continue
 
+      if self.fit_buckets and bucket_id != len(self.buckets)-1 \
+        and len(feat) >= self.buckets[bucket_id+1] :
+        # this 'continue' make sure that long utterances only got assigned to long buckets
+        # this can be changed if we want more data
+        continue
+
       while start_index + max_length < len(feat):
         # cut utterances into pieces
         end_index = start_index + max_length
@@ -249,7 +257,7 @@ class JointDNNDataGenerator:
       if not self.loop and self.split_data_counter == self.num_split:
         # not loop mode and we arrive the end, do not read anymore
         # let's just throw away the last few samples
-        return None, None, None, None, None
+        return None, None, None, None, 0
 
       feats, asr_labels, sid_labels = self.get_next_split_data()
 
