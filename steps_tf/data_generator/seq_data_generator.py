@@ -12,7 +12,7 @@ DEVNULL = open(os.devnull, 'w')
 
 class SeqDataGenerator:
   def __init__ (self, data, labels, trans_dir, exp, name, conf, 
-                seed=777, shuffle=False, loop=False, num_gpus = 1):
+                seed=777, shuffle=False, loop=False, num_gpus=1, buckets=None):
     
     self.data = data
     self.labels = labels
@@ -23,6 +23,7 @@ class SeqDataGenerator:
     self.max_length = conf.get('max_length', 1000)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
+    self.buckets = [self.max_length ] if buckets is None else buckets
 
     self.loop = loop    # keep looping over dataset
 
@@ -140,6 +141,17 @@ class SeqDataGenerator:
 
     return (feat_list, label_list)
 
+
+  def get_bucket(self, length):
+    max_length = self.buckets[-1]
+    bucket_id = len(self.buckets) - 1
+    for i in range(len(self.buckets)):
+      if length <= self.buckets[i]:
+        max_length = self.buckets[i]
+        bucket_id = i
+        break
+    return max_length, bucket_id
+
           
   def pack_utt_data(self, features):
     '''
@@ -153,10 +165,12 @@ class SeqDataGenerator:
     '''
     features_pad = []
     mask = []
-    max_length = self.max_length
+    feat_len = len(features[0])
+    max_length, bucket_id = self.get_bucket(feat_len)
 
+    #we assume features from each split are of same length, so we use the same bucket
     for feat in features:
-
+      assert feat_len == len(feat)
       if max_length > len(feat) :
         num_zero = max_length - len(feat)
         zeros2pad = numpy.zeros((num_zero, len(feat[0])))
@@ -169,7 +183,7 @@ class SeqDataGenerator:
     features_pad = numpy.array(features_pad)
     mask = numpy.array(mask)
 
-    return features_pad, mask
+    return features_pad, mask, bucket_id
 
 
   def get_batch_utterances (self):
@@ -178,48 +192,39 @@ class SeqDataGenerator:
       x_mini: np matrix [batch_size, max_length, feat_dim]
       y_mini: np matrix [batch_size]
       mask: np matrix [batch_size, max_length]
+      bucket_id: an int
     '''
     # read split data until we have enough for this batch
     while (self.batch_pointer + self.batch_size >= len(self.x)):
       if not self.loop and self.split_data_counter == self.num_split:
         # not loop mode and we arrive the end, do not read anymore
-        '''
-        # to complete this, we need to modify self.acc and self.loss and add one more mask; too complicated
+        # to complete this, we need to modify self.acc and self.loss and add one more mask; 
+        # too complicated
         # let's just throw away the last few samples
-        if self.batch_pointer < len(self.x):
-          # last batch, need to pad to batches
-          num_zero = self.batch_size - (len(self.x) - self.batch_pointer)
-          x_pad = numpy.zeros((num_zero, self.max_length, self.feat_dim))
-          y_pad = numpy.zeros((num_zero))
-          mask_pad = numpy.zeros((num_zero, self.max_length))
-          x_mini = numpy.concatenate((self.x[self.batch_pointer:], x_pad))
-          y_mini = numpy.concatenate((self.y[self.batch_pointer:], y_pad))
-          mask_mini = numpy.concatenate((self.mask[self.batch_pointer:], mask_pad))
-
-          self.last_batch_utts = len(self.x) - self.batch_pointer
-          self.batch_pointer += self.batch_size
-          return x_mini, y_mini, mask_mini
-        else:
-          return None, None, None
-        '''
-        return None, None, None
+        return None, None, None, 0
 
       x, y = self.get_next_split_data()
-      x_pad, mask = self.pack_utt_data(x)
+      x_pad, mask, bucket_id = self.pack_utt_data(x)
 
-      self.x = numpy.concatenate ((self.x[self.batch_pointer:], x_pad))
-      self.y = numpy.append(self.y[self.batch_pointer:], y)
-      self.mask = numpy.concatenate ((self.mask[self.batch_pointer:], mask))
+      # since max_length may change over different split, we just throw things left, won't be much
+      #self.x = numpy.concatenate ((self.x[self.batch_pointer:], x_pad))
+      #self.y = numpy.append(self.y[self.batch_pointer:], y)
+      #self.mask = numpy.concatenate ((self.mask[self.batch_pointer:], mask))
+
+      self.x = x_pad
+      self.y = y
+      self.mask = mask
+      self.bucket_id = bucket_id
       
       self.batch_pointer = 0
 
       ## Shuffle data, utterance base
       # data is already shuffled. we don't need to do that again
-#      randomInd = numpy.array(range(len(self.x)))
-#      numpy.random.shuffle(randomInd)
-#      self.x = self.x[randomInd]
-#      self.y = self.y[randomInd]
-#      self.mask = self.mask[randomInd]
+      #randomInd = numpy.array(range(len(self.x)))
+      #numpy.random.shuffle(randomInd)
+      #self.x = self.x[randomInd]
+      #self.y = self.y[randomInd]
+      #self.mask = self.mask[randomInd]
 
       self.split_data_counter += 1
       if self.loop and self.split_data_counter == self.num_split:
@@ -232,7 +237,7 @@ class SeqDataGenerator:
     self.last_batch_utts = len(y_mini)
     self.batch_pointer += self.batch_size
 
-    return x_mini, y_mini, mask_mini
+    return x_mini, y_mini, mask_mini, self.bucket_id
 
 
   def get_batch_size(self):

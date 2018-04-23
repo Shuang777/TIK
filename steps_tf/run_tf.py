@@ -171,10 +171,9 @@ elif nnet_arch in ['dnn', 'bn']:
                               exp, 'cv', feature_conf, num_gpus = num_gpus)
 elif nnet_arch == 'seq2class':
   tr_gen = SeqDataGenerator(data, utt2label_train, None, exp, 'train',
-                            feature_conf, shuffle=True, num_gpus = num_gpus)
-
+                            feature_conf, shuffle=True, num_gpus = num_gpus, buckets=buckets_tr)
   cv_gen = SeqDataGenerator(data, utt2label_valid, None, exp, 'valid', 
-                            feature_conf, num_gpus = num_gpus)
+                            feature_conf, num_gpus = num_gpus, buckets=buckets_tr)
 elif nnet_arch == 'jointdnn':
   tr_gen = JointDNNDataGenerator(exp+'/tr90', utt2label_train, ali_labels, exp, 
                                  'train', feature_conf, shuffle=True, buckets=buckets_tr)

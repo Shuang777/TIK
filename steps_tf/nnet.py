@@ -31,51 +31,47 @@ def placeholder_lstm(input_dim, max_length, batch_size):
   return feats_holder, seq_length_holder, mask_holder, labels_holder
 
 
-def placeholder_seq2class(input_dim, max_length, batch_size):
+def placeholder_seq2class(input_dim, max_length, batch_size, name_ext = ''):
   '''
   outputs:
     feats_holder, labels_holder, mask_holder
   '''
-  feats_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length, input_dim), name='feature')
+  if batch_size == 1:
+    feats_holder = tf.placeholder(tf.float32, shape=(max_length, input_dim), 
+                                  name='feature' + name_ext)
+    mask_holder = tf.placeholder(tf.float32, shape=(max_length), name='mask' + name_ext)
+    labels_holder = None
 
-  labels_holder = tf.placeholder(tf.int32, shape=(batch_size), name='target')
-
-  mask_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length), name='mask')
+  else:
+    feats_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length, input_dim), 
+                                  name='feature' + name_ext)
+    labels_holder = tf.placeholder(tf.int32, shape=(batch_size), name='target' + name_ext)
+    mask_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length), name='mask' + name_ext)
 
   return feats_holder, mask_holder, labels_holder
 
 
-def placeholder_jointdnn(input_dim, max_length, batch_size):
+def placeholder_jointdnn(input_dim, max_length, batch_size, name_ext = ''):
   '''
   outputs:
     feats_holder, asr_labels_holder, sid_labels_holder, mask_holder
   '''
-  feats_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length, input_dim), name='feature')
+  if batch_size == 1:
+    feats_holder = tf.placeholder(tf.float32, shape=(length, input_dim), 
+                                  name='feature' + name_ext)    
+    mask_holder = tf.placeholder(tf.float32, shape=(length), name='mask'+name_ext)
+    asr_labels_holder = None
+    sid_labels_holder = None
 
-  asr_labels_holder = tf.placeholder(tf.int32, shape=(batch_size, max_length), name='asr_target')
-  
-  sid_labels_holder = tf.placeholder(tf.int32, shape=(batch_size), name='sid_target')
-
-  mask_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length), name='mask')
+  else:
+    feats_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length, input_dim), 
+                                  name='feature' + name_ext)
+    mask_holder = tf.placeholder(tf.float32, shape=(batch_size, max_length), name='mask'+name_ext)
+    asr_labels_holder = tf.placeholder(tf.int32, shape=(batch_size, max_length), 
+                                       name='asr_target' + name_ext)
+    sid_labels_holder = tf.placeholder(tf.int32, shape=(batch_size), name='sid_target'+name_ext)
 
   return feats_holder, mask_holder, asr_labels_holder, sid_labels_holder
-
-
-def placeholder_uttbuckets(input_dim, bucket_sizes):
-  '''
-  outputs:
-    bucket_feats_holders: list of place_holder of size [bucket, input_dim]
-    bucket_mask_holders: list of place_holder of size [bucket]
-  '''
-  bucket_feats_holders = []
-  bucket_mask_holders = []
-  for length in bucket_sizes:
-    feats_holder = tf.placeholder(tf.float32, shape=(length, input_dim), 
-                                  name='bucket_feature_'+str(length))
-    bucket_feats_holders.append(feats_holder)
-    mask_holder = tf.placeholder(tf.float32, shape=(length), name='bucket_mask_'+str(length))
-    bucket_mask_holders.append(mask_holder)
-  return bucket_feats_holders,bucket_mask_holders
 
 
 def inference_dnn(feats_holder, nnet_proto_file, keep_prob_holder = None, 

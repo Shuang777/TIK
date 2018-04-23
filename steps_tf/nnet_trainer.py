@@ -64,7 +64,8 @@ class NNTrainer(object):
     elif self.arch == 'lstm':
       self.model = LSTM(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
     elif self.arch == 'seq2class':
-      self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, self.max_length, num_gpus)
+      self.model = SEQ2CLASS(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
+                             buckets_tr = self.buckets_tr, buckets = self.buckets)
     elif self.arch == 'jointdnn':
       self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
                             buckets_tr = self.buckets_tr, buckets = self.buckets)
@@ -624,8 +625,9 @@ class NNTrainer(object):
 
   def gen_embedding(self, feats, mask, bucket_id = 0, embedding_index = 0):
     if self.arch == 'seq2class':
-      feed_dict = self.model.prep_forward_feed(feats, mask)
-      embedding = self.sess.run(self.model.get_embedding(embedding_index), feed_dict=feed_dict)
+      feed_dict, embedding_layer = self.model.prep_forward_feed(feats, mask, 
+                                                                bucket_id, embedding_index)
+      embedding = self.sess.run(embedding_layer, feed_dict=feed_dict)
     elif self.arch == 'jointdnn':
       feed_dict, embedding_layer = self.model.prep_forward_sid(feats, mask, 
                                                                bucket_id, embedding_index)
