@@ -384,6 +384,8 @@ class SEQ2CLASS(object):
     embedding = self.bucket_embeddings[self.num_embeddings * bucket_id + embedding_index]
 
     feed_dict = { bucket_feats_holder: x,
-                  bucket_mask_holder: mask}
+                  bucket_mask_holder: mask,
+                  self.keep_prob_holder: 1.0,
+                  self.beta_holder: 0.0}
 
     return feed_dict, embedding
