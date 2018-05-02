@@ -356,6 +356,7 @@ def make_sid_proto(input_dim, output_dim, conf, nnet_proto_file):
 
   nnet_proto.write("<NnetProto>\n")
 
+  layer_out_dim = input_dim
   for i in range(num_hid_layers):
     layer_in_dim = input_dim if (i == 0) else num_hid_neurons
     layer_out_dim = num_hid_neurons if (i != num_hid_layers-1) else num_pooling_neurons
@@ -395,3 +396,34 @@ def make_sid_proto(input_dim, output_dim, conf, nnet_proto_file):
   nnet_proto.write("</NnetProto>\n")
   nnet_proto.close()
 
+
+def sid_append_top(conf, output_dim, nnet_proto_file):
+  nnet_proto = open(nnet_proto_file, 'w')
+  with_glorot = conf.get('with_glorot', True)
+  
+  #use batch normalization within affine transformation
+  affine_batch_norm = conf.get('affine_batch_norm', False)
+
+  if affine_batch_norm:
+    affine_layer = 'AffineBatchNormalization'
+  else:
+    affine_layer = 'AffineTransform'
+
+  embedding_layers = conf['embedding_layers']
+  embedding_layer_units = [ int(i) for i in embedding_layers.split(':') ]
+ 
+  hid_bias_mean = conf.get('hid_bias_mean', 0.0)
+  hid_bias_range = conf.get('hid_bias_range', 0.1)
+  param_stddev_factor = conf.get('param_stddev_factor', 0.1)
+
+  nnet_proto.write("<NnetProto>\n")
+
+  layer_in_dim = embedding_layer_units[-1]
+  layer_out_dim = output_dim
+
+  nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
+      (affine_layer, layer_in_dim, layer_out_dim, hid_bias_mean, hid_bias_range, \
+       (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
+
+  nnet_proto.write("</NnetProto>\n")
+  nnet_proto.close()

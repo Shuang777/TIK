@@ -57,9 +57,9 @@ def placeholder_jointdnn(input_dim, max_length, batch_size, name_ext = ''):
     feats_holder, asr_labels_holder, sid_labels_holder, mask_holder
   '''
   if batch_size == 1:
-    feats_holder = tf.placeholder(tf.float32, shape=(length, input_dim), 
+    feats_holder = tf.placeholder(tf.float32, shape=(max_length, input_dim), 
                                   name='feature' + name_ext)    
-    mask_holder = tf.placeholder(tf.float32, shape=(length), name='mask'+name_ext)
+    mask_holder = tf.placeholder(tf.float32, shape=(max_length), name='mask'+name_ext)
     asr_labels_holder = None
     sid_labels_holder = None
 
@@ -201,7 +201,7 @@ def inference_seq2class(feats_holder, mask_holder, nnet_proto_file,
       count_layer += 1
 
   # pooling layer
-  with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+  with tf.variable_scope(prefix+'layer'+str(count_layer), reuse = reuse):
     layer_out = build_layer(line, layer_in, mask_holder = mask_holder, reuse = reuse)
     layer_in = layer_out
     count_layer += 1
@@ -212,15 +212,43 @@ def inference_seq2class(feats_holder, mask_holder, nnet_proto_file,
     line = line.strip()
     if line == '</NnetProto>':
       break
-    with tf.variable_scope('layer'+str(count_layer), reuse = reuse):
+    with tf.variable_scope(prefix+'layer'+str(count_layer), reuse = reuse):
       layer_out = build_layer(line, layer_in, keep_prob = keep_prob_holder)
+      last_layer_in = layer_in    # we save the input to last layer (for fintuning phase)
       layer_in = layer_out
       count_layer += 1
       if line.startswith('<AffineTransform>'):
         embeddings.append(layer_out)
 
   logits = layer_out
-  return logits, embeddings
+  return logits, embeddings, last_layer_in
+
+
+def finetune_sid(layer_in, nnet_proto_file, keep_prob_holder, 
+                 reuse = False, prefix = ''):
+  '''
+  args:
+    layer_in: np 2-d array of size [num_batch, num_hidden_units]
+  outputs: 
+    logits: np 2-d array of size [num_batch, num_targets]
+  '''
+  
+  nnet_proto = open(nnet_proto_file, 'r')
+  line = nnet_proto.readline().strip()
+  assert line == '<NnetProto>'
+
+  count_layer = 1
+  for line in nnet_proto:
+    line = line.strip()
+    if line == '</NnetProto>':
+      break
+    with tf.variable_scope(prefix+'layer'+str(count_layer), reuse = reuse):
+      layer_out = build_layer(line, layer_in, keep_prob = keep_prob_holder)
+      layer_in = layer_out
+      count_layer += 1
+
+  logits = layer_out
+  return logits
 
 
 def build_layer(line, layer_in, seq_length = None, mask_holder = None,
