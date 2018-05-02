@@ -69,6 +69,12 @@ class NNTrainer(object):
     elif self.arch == 'jointdnn':
       self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
                             buckets_tr = self.buckets_tr, buckets = self.buckets)
+    elif self.arch == 'jointdnn-sid':
+      self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
+                            buckets_tr = self.buckets_tr, buckets = self.buckets, mode = 'sid')
+    elif self.arch == 'jointdnn-asr':
+      self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
+                            buckets_tr = self.buckets_tr, buckets = self.buckets, mode = 'asr')
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
  
@@ -87,6 +93,18 @@ class NNTrainer(object):
 
   def make_proto(self, nnet_conf, nnet_proto_file):
     self.model.make_proto(nnet_conf, nnet_proto_file)
+
+
+  def edit_model(self, nnet_proto_file, action):
+    if action == 'finetune-sid':
+      self.model.finetune_sid(self.graph, nnet_proto_file)
+      self.sess.run(self.model.get_init_additional_op())
+    else:
+      raise RuntimeError('action %s not supported' % action)
+    
+    if self.summary_dir is not None:
+      self.summary_writer = tf.summary.FileWriter(self.summary_dir, self.graph)
+      self.summary_writer.flush()
 
 
   def __exit__ (self):
@@ -243,11 +261,11 @@ class NNTrainer(object):
                     sum_counts, train_gen.count_units(), sum_counts / duration, 
                     train_gen.count_units(), 100.0*acc/train_gen.get_last_batch_counts())
 
-        if not validation_mode and self.global_step is not None:
-          current_lr = self.sess.run(self.learning_rate)
-          message += " cur_lr %.6f" % current_lr
+          if not validation_mode and self.global_step is not None:
+            current_lr = self.sess.run(self.learning_rate)
+            message += " cur_lr %.6f" % current_lr
 
-        iter_logger.info(message)
+          iter_logger.info(message)
 
     # reset batch_generator because it might be used again
     train_gen.reset_batch()
@@ -351,11 +369,11 @@ class NNTrainer(object):
                     100.0*asr_acc/train_gen.get_last_batch_frames(),
                     100.0*sid_acc/train_gen.get_last_batch_utts())
 
-        if not validation_mode and self.global_step is not None:
-          current_lr = self.sess.run(self.learning_rate)
-          message += " cur_lr %.6f" % current_lr
+          if not validation_mode and self.global_step is not None:
+            current_lr = self.sess.run(self.learning_rate)
+            message += " cur_lr %.6f" % current_lr
 
-        iter_logger.info(message)
+          iter_logger.info(message)
 
     # reset batch_generator because it might be used again
     train_gen.reset_batch()

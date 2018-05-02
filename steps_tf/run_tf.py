@@ -94,7 +94,6 @@ feature_conf = section_config.parse(config.items('feature'))
 
 nnet_arch = nnet_conf['nnet_arch']
 buckets_tr = nnet_conf.get('buckets_tr', None)    # training buckets
-nnet_proto_file = general_conf.get('nnet_proto', None)
 summary_dir = exp+'/summary'
 
 if nnet_arch in ['lstm', 'bn', 'dnn']:
@@ -115,7 +114,7 @@ if nnet_arch in ['lstm', 'bn', 'dnn']:
                    'tree-info --print-args=false %s/tree | grep num-pdfs | awk \'{print $2}\''
                    % ali_dir, shell=True).strip())
 
-elif nnet_arch == 'seq2class':
+elif nnet_arch in ['seq2class', 'jointdnn-sid']:
   utt2label_train, _ = load_utt2label(data + '/utt2label.train', convert_int = True)
   utt2label_valid, _ = load_utt2label(data + '/utt2label.valid', convert_int = True)
 
@@ -169,7 +168,7 @@ elif nnet_arch in ['dnn', 'bn']:
 
   cv_gen = FrameDataGenerator(exp+'/cv10', ali_labels, ali_dir, 
                               exp, 'cv', feature_conf, num_gpus = num_gpus)
-elif nnet_arch == 'seq2class':
+elif nnet_arch in ['seq2class', 'jointdnn-sid']:
   tr_gen = SeqDataGenerator(data, utt2label_train, None, exp, 'train',
                             feature_conf, shuffle=True, num_gpus = num_gpus, buckets=buckets_tr)
   cv_gen = SeqDataGenerator(data, utt2label_valid, None, exp, 'valid', 
@@ -200,6 +199,7 @@ if max_length is not None:
   open(exp+'/max_length', 'w').write(str(max_length))
 
 nnet = NNTrainer(nnet_conf, input_dim, output_dim, feature_conf, 
+                 gpu_id = nnet_train_conf.get('gpu_id', -1),
                  num_gpus = num_gpus, summary_dir = summary_dir)
 
 mlp_init = exp+'/model.init'
@@ -211,13 +211,19 @@ elif os.path.isfile(mlp_init+'.index'):
   nnet.read(mlp_init)
   mlp_best = mlp_init
 else:
-  if nnet_proto_file is None:
+  # we need to create the model
+  if nnet_arch == 'jointdnn-sid':
+    # we create the model on top of existing model
+    init_model = open(exp+'/init.model.txt').read().strip()
+    nnet.read(init_model)
     nnet_proto_file = exp+'/nnet.proto'
     nnet.make_proto(nnet_conf, nnet_proto_file)
+    nnet.edit_model(nnet_proto_file, 'finetune-sid')
   else:
-    shutil.copyfile(nnet_proto_file, exp+'/nnet.proto')
-
-  nnet.init_nnet(nnet_proto_file)
+    # we create it from scratch
+    nnet_proto_file = exp+'/nnet.proto'
+    nnet.make_proto(nnet_conf, nnet_proto_file)
+    nnet.init_nnet(nnet_proto_file)
 
   logger.info("initialize model to %s", mlp_init)
   nnet.write(mlp_init)
