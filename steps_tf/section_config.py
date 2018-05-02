@@ -14,7 +14,8 @@ def parse(config_tuple):
              'max_length', 'sliding_window', 'jitter_window', 'bottleneck_dim',
              'num_iters', 'num_gpus', 'num_hidden_layers_after_bn', 'num_proj',
              'pooling_units', 'asr_hidden_layers', 'asr_hidden_units',
-             'sid_hidden_layers', 'sid_hidden_units', 'max_split_data_size']:
+             'sid_hidden_layers', 'sid_hidden_units', 'max_split_data_size',
+             'gpu_id']:
       config_parsed[i] = int(config_dict[i])
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
                'initial_learning_rate', 'final_learning_rate', 'momentum', 
