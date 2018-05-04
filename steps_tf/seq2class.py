@@ -61,7 +61,7 @@ class SEQ2CLASS(object):
                                                            self.batch_size,
                                                            name_ext = '_tr'+str(bucket_length))
 
-        logits, _ = nnet.inference_seq2class(feats_holder, mask_holder, nnet_proto_file, 
+        logits, _, _ = nnet.inference_seq2class(feats_holder, mask_holder, nnet_proto_file, 
                                              keep_prob_holder, reuse = reuse)
 
         outputs = tf.nn.softmax(logits)
@@ -88,7 +88,7 @@ class SEQ2CLASS(object):
         feats_holder, mask_holder, _ = nnet.placeholder_seq2class(self.input_dim,
                                                                   bucket_length, 1,
                                                                   name_ext = '_'+str(bucket_length))
-        _, embeddings = nnet.inference_seq2class(feats_holder, mask_holder, 
+        _, embeddings, _ = nnet.inference_seq2class(feats_holder, mask_holder, 
                                                  nnet_proto_file, keep_prob_holder, reuse = True)
 
         bucket_feats_holders.append(feats_holder)

@@ -240,6 +240,7 @@ class JOINTDNN(object):
       bucket_tr_sid_logits = tf.get_collection_ref('bucket_tr_sid_logits')
       del bucket_tr_sid_logits[:]
 
+      assert len(self.buckets_tr) == len(self.bucket_tr_sid_last_ins)
       for (bucket_length, layer_in) in zip(self.buckets_tr, self.bucket_tr_sid_last_ins):
         reuse = True if bucket_length != self.buckets_tr[0] else False
 
@@ -352,6 +353,7 @@ class JOINTDNN(object):
       self.bucket_tr_asr_eval_acc = []
       self.bucket_tr_sid_eval_acc = []
 
+      assert len(self.bucket_tr_asr_logits) == len(self.bucket_tr_sid_logits)
       for (asr_logits, sid_logits, asr_labels_holder, sid_labels_holder, mask_holder) in \
         zip(self.bucket_tr_asr_logits, self.bucket_tr_sid_logits, 
         self.bucket_tr_asr_labels_holders, self.bucket_tr_sid_labels_holders, 

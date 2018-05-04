@@ -182,6 +182,7 @@ def inference_seq2class(feats_holder, mask_holder, nnet_proto_file,
   outputs: 
     logits: np 2-d array of size [num_batch, num_targets]
     embeddings: list of np 2-d array of size [num_batch, num_embedding dims]
+    last_layer_in: input to the last layer (for finetuning use)
   '''
   
   nnet_proto = open(nnet_proto_file, 'r')
