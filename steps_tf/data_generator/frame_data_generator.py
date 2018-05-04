@@ -12,7 +12,7 @@ DEVNULL = open(os.devnull, 'w')
 
 class FrameDataGenerator:
   def __init__ (self, data, labels, trans_dir, exp, name, conf, 
-                seed=777, shuffle=False, loop=False, num_gpus = 1):
+                seed=777, shuffle=False, num_gpus = 1):
     
     self.data = data
     self.labels = labels
@@ -22,9 +22,19 @@ class FrameDataGenerator:
     self.splice = conf.get('context_width', 5)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
-    self.max_split_data_size = 5000 ## These many utterances are loaded into memory at once.
+    self.max_split_data_size = conf.get('max_split_data_size', 5000)
+    self.clean_up = conf.get('clean_up', True)
 
-    self.loop = loop    # keep looping over dataset
+    if self.name == 'train':
+      self.loop = conf.get('loop_mode', False)
+      self.split_per_iter = conf.get('split_per_iter', None)
+    else:
+      self.loop = False
+      self.split_per_iter = None
+    self.split_counter = 0        # keep increasing
+    self.split_data_counter = 0   # loop from 0 to num_split
+    if self.loop and self.split_per_iter is None:
+      raise RuntimeError('Must specify split_per_iter in loop mode!')
 
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/suhang/exp/tmp/'))
 
@@ -93,16 +103,18 @@ class FrameDataGenerator:
     return self.feat_dim
 
 
-  def clean (self):
-    shutil.rmtree(self.tmp_dir)
+  def __del__(self):
+    if self.clean_up:
+      shutil.rmtree(self.tmp_dir)
 
 
   def has_data(self):
-  # has enough data for next batch
-    if self.loop or self.split_data_counter != self.num_split:     # we always have data if in loop mode
-      return True
-    elif self.batch_pointer + self.batch_size >= len(self.x):
-      return False
+    # has enough data for next batch
+    if self.batch_pointer + self.batch_size > len(self.x):
+      if self.loop and (self.split_counter+1) % self.split_per_iter == 0:
+        return False
+      if not self.loop and self.split_data_counter == self.num_split:
+        return False
     return True
       
 
@@ -148,8 +160,8 @@ class FrameDataGenerator:
       y_mini: np array [num_frames]
     '''
     # read split data until we have enough for this batch
-    while (self.batch_pointer + self.batch_size >= len (self.x)):
-      if not self.loop and self.split_data_counter == self.num_split:
+    while (self.batch_pointer + self.batch_size > len (self.x)):
+      if not self.has_data():
         # not loop mode and we arrive the end, do not read anymore
         return None, None
 
@@ -165,6 +177,7 @@ class FrameDataGenerator:
       self.x = self.x[randomInd]
       self.y = self.y[randomInd]
 
+      self.split_counter += 1
       self.split_data_counter += 1
       if self.loop and self.split_data_counter == self.num_split:
         self.split_data_counter = 0
@@ -191,7 +204,10 @@ class FrameDataGenerator:
 
 
   def reset_batch(self):
-    self.split_data_counter = 0
+    if self.loop:
+      self.split_counter += 1
+    else:
+      self.split_data_counter = 0
 
 
   def save_target_counts(self, num_targets, output_file):

@@ -13,7 +13,7 @@ DEVNULL = open(os.devnull, 'w')
 
 class JointDNNDataGenerator:
   def __init__ (self, data, sid_labels, asr_labels, exp, name, conf, 
-                seed=777, shuffle=False, loop=False, num_gpus = 1, buckets=None):
+                seed=777, shuffle=False, num_gpus = 1, buckets=None):
     
     self.data = data
     self.sid_labels = sid_labels
@@ -27,14 +27,24 @@ class JointDNNDataGenerator:
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
     self.fit_buckets = conf.get('fit_buckets', True)
-    self.buckets = buckets
-    self.loop = loop    # keep looping over dataset
-    
-    if self.buckets is None:    # we only have one bucket in this case
-      self.buckets = [self.max_length]
-
     ## These many utterances are loaded into memory at once.
     self.max_split_data_size = conf.get('max_split_data_size', 2000) 
+    self.clean_up = conf.get('clean_up', True)
+    self.buckets = buckets
+
+    if self.name == 'train':
+      self.loop = conf.get('loop_mode', False)
+      self.split_per_iter = conf.get('split_per_iter', None)
+    else:
+      self.loop = False
+      self.split_per_iter = None
+    self.split_counter = 0        # keep increasing
+    self.split_data_counter = 0   # loop from 0 to num_split
+    if self.loop and self.split_per_iter is None:
+      raise RuntimeError('Must specify split_per_iter in loop mode!')
+
+    if self.buckets is None:    # we only have one bucket in this case
+      self.buckets = [self.max_length]
 
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
@@ -91,7 +101,6 @@ class JointDNNDataGenerator:
 
     self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
                     feat_dim_delta_multiple * (2*self.splice+1)
-    self.split_data_counter = 0
     
     self.x = numpy.empty ((0, self.max_length, self.feat_dim))  # features
     self.y = numpy.empty ((0, self.max_length), dtype='int32')  # asr_labels
@@ -105,17 +114,18 @@ class JointDNNDataGenerator:
     return self.feat_dim
 
 
-  def clean (self):
-    shutil.rmtree(self.tmp_dir)
+  def __del__(self):
+    if self.clean_up:
+      shutil.rmtree(self.tmp_dir)
 
 
   def has_data(self):
-  # has enough data for next batch
-    if self.loop or self.split_data_counter != self.num_split:     
-      # we always have data if in loop mode; or we haven't reach num_split
-      return True
-    elif self.batch_pointer + self.batch_size >= len(self.x):
-      return False
+    # has enough data for next batch
+    if self.batch_pointer + self.batch_size > len(self.x):
+      if self.loop and (self.split_counter+1) % self.split_per_iter == 0:
+        return False
+      if not self.loop and self.split_data_counter == self.num_split:
+        return False
     return True
      
       
@@ -225,8 +235,7 @@ class JointDNNDataGenerator:
     '''
     # read split data until we have enough for this batch
     while (self.batch_pointer + self.batch_size > len(self.x)):
-      if not self.loop and self.split_data_counter == self.num_split:
-        # not loop mode and we arrive the end, do not read anymore
+      if not self.has_data():
         # let's just throw away the last few samples
         return None, None, None, None, 0
 
@@ -248,6 +257,7 @@ class JointDNNDataGenerator:
       
       self.batch_pointer = 0
 
+      self.split_counter += 1
       self.split_data_counter += 1
       if self.loop and self.split_data_counter == self.num_split:
         self.split_data_counter = 0
@@ -274,7 +284,10 @@ class JointDNNDataGenerator:
     return self.last_batch_frames
 
   def reset_batch(self):
-    self.split_data_counter = 0
+    if self.loop:
+      self.split_counter += 1
+    else:
+      self.split_data_counter = 0
 
   def count_units(self):
     return 'utterances'

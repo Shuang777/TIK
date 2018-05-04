@@ -23,6 +23,7 @@ class SeqDataGenerator:
     self.max_length = conf.get('max_length', 1000)
     self.feat_type = conf.get('feat_type', 'raw')
     self.delta_opts = conf.get('delta_opts', '')
+    self.clean_up = conf.get('clean_up', True)
     self.buckets = [self.max_length ] if buckets is None else buckets
 
     # in loop mode, we keep looping over dataset
@@ -89,12 +90,13 @@ class SeqDataGenerator:
     return self.feat_dim
 
 
-  def clean (self):
-    shutil.rmtree(self.tmp_dir)
+  def __del__(self):
+    if self.clean_up:
+      shutil.rmtree(self.tmp_dir)
 
 
   def has_data(self):
-  # has enough data for next batch
+    # has enough data for next batch
     if self.batch_pointer + self.batch_size > len(self.x):
       if self.loop and (self.split_counter+1) % self.split_per_iter == 0:
         return False

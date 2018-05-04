@@ -181,8 +181,6 @@ elif nnet_arch == 'jointdnn':
 else:
   raise RuntimeError("nnet_arch %s not supported yet", nnet_arch)
 
-atexit.register(tr_gen.clean)
-atexit.register(cv_gen.clean)
 
 # get the feature input dim
 input_dim = tr_gen.get_feat_dim()
