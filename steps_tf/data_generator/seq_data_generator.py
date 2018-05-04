@@ -12,7 +12,7 @@ DEVNULL = open(os.devnull, 'w')
 
 class SeqDataGenerator:
   def __init__ (self, data, labels, trans_dir, exp, name, conf, 
-                seed=777, shuffle=False, loop=False, num_gpus=1, buckets=None):
+                seed=777, shuffle=False, num_gpus=1, buckets=None):
     
     self.data = data
     self.labels = labels
@@ -25,7 +25,19 @@ class SeqDataGenerator:
     self.delta_opts = conf.get('delta_opts', '')
     self.buckets = [self.max_length ] if buckets is None else buckets
 
-    self.loop = loop    # keep looping over dataset
+    # in loop mode, we keep looping over dataset
+    # and decide iteration by split_per_iter
+    # otherwise, we decide iteration by split_data_counter
+    if self.name == 'train':
+      self.loop = conf.get('loop_mode', False)
+      self.split_per_iter = conf.get('split_per_iter', None)
+    else:
+      self.loop = False
+      self.split_per_iter = None
+    self.split_counter = 0        # keep increasing
+    self.split_data_counter = 0   # loop from 0 to num_split
+    if self.loop and self.split_per_iter is None:
+      raise RuntimeError('Must specify split_per_iter in loop mode!')
 
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
 
@@ -66,7 +78,6 @@ class SeqDataGenerator:
 
     self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
                     feat_dim_delta_multiple * (2*self.splice+1)
-    self.split_data_counter = 0
     
     self.x = numpy.empty ((0, self.max_length, self.feat_dim))
     self.y = numpy.empty (0, dtype='int32')
@@ -84,10 +95,11 @@ class SeqDataGenerator:
 
   def has_data(self):
   # has enough data for next batch
-    if self.loop or self.split_data_counter != self.num_split:     # we always have data if in loop mode
-      return True
-    elif self.batch_pointer + self.batch_size >= len(self.x):
-      return False
+    if self.batch_pointer + self.batch_size > len(self.x):
+      if self.loop and (self.split_counter+1) % self.split_per_iter == 0:
+        return False
+      if not self.loop and self.split_data_counter == self.num_split:
+        return False
     return True
      
       
@@ -195,12 +207,8 @@ class SeqDataGenerator:
       bucket_id: an int
     '''
     # read split data until we have enough for this batch
-    while (self.batch_pointer + self.batch_size >= len(self.x)):
-      if not self.loop and self.split_data_counter == self.num_split:
-        # not loop mode and we arrive the end, do not read anymore
-        # to complete this, we need to modify self.acc and self.loss and add one more mask; 
-        # too complicated
-        # let's just throw away the last few samples
+    while (self.batch_pointer + self.batch_size > len(self.x)):
+      if not self.has_data():
         return None, None, None, 0
 
       x, y = self.get_next_split_data()
@@ -226,6 +234,7 @@ class SeqDataGenerator:
       #self.y = self.y[randomInd]
       #self.mask = self.mask[randomInd]
 
+      self.split_counter += 1
       self.split_data_counter += 1
       if self.loop and self.split_data_counter == self.num_split:
         self.split_data_counter = 0
@@ -253,6 +262,9 @@ class SeqDataGenerator:
 
 
   def reset_batch(self):
-    self.split_data_counter = 0
+    if self.loop:
+      self.split_counter += 1
+    else:
+      self.split_data_counter = 0
 
 

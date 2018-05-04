@@ -15,7 +15,7 @@ def parse(config_tuple):
              'num_iters', 'num_gpus', 'num_hidden_layers_after_bn', 'num_proj',
              'pooling_units', 'asr_hidden_layers', 'asr_hidden_units',
              'sid_hidden_layers', 'sid_hidden_units', 'max_split_data_size',
-             'gpu_id']:
+             'gpu_id', 'split_per_iter']:
       config_parsed[i] = int(config_dict[i])
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
                'initial_learning_rate', 'final_learning_rate', 'momentum', 
@@ -23,7 +23,8 @@ def parse(config_tuple):
                'param_stddev_factor', 'hid_bias_range']:
       config_parsed[i] = float(config_dict[i])
     elif i in ['batch_norm', 'affine_batch_norm', 'with_softmax', 'use_peepholes', 
-               'clip_gradients', 'use_std', 'with_nonlin', 'sid_batch_norm', 'fit_buckets']:
+               'clip_gradients', 'use_std', 'with_nonlin', 'sid_batch_norm', 'fit_buckets',
+               'loop_mode']:
       config_parsed[i] = str2boolean(config_dict[i])
     elif i in ['nonlin', 'op_type', 'nnet_arch', 'lstm_type', 'feat_type', 
                'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers', 
