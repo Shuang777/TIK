@@ -109,7 +109,7 @@ class UttDataGenerator:
 
 
   def __del__(self):
-    if self.clean_up:
+    if self.clean_up and os.path.exists(self.feat_dir):
       shutil.rmtree(self.tmp_dir)
 
 

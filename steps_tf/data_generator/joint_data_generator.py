@@ -46,7 +46,13 @@ class JointDNNDataGenerator:
     if self.buckets is None:    # we only have one bucket in this case
       self.buckets = [self.max_length]
 
-    self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
+    # if feat_dir is specified, use that; otherwise use tmp_dir
+    if 'feat_dir' in conf:
+      self.feat_dir = conf['feat_dir']
+      if not os.path.exists(self.feat_dir):
+        os.makedirs(self.feat_dir)
+    else:
+      self.feat_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp/'))
 
     ## Read number of utterances
     with open (data + '/utt2spk') as f:
@@ -82,7 +88,7 @@ class JointDNNDataGenerator:
       cmd.extend(['transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
               '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-|'])
     
-    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.tmp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
+    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.feat_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
     Popen(' '.join(cmd), shell=True).communicate()
 
     if name == 'train':
@@ -94,9 +100,10 @@ class JointDNNDataGenerator:
     self.num_split = int(math.ceil(1.0 * self.num_utts / self.max_split_data_size))
     for i in range(self.num_split):
       split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
-      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.tmp_dir, self.name, i)
+      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.feat_dir, self.name, i)
       Popen (split_scp_cmd, shell=True).communicate()
-    
+    open('%s/num_split.%s' % (self.feat_dir, self.name), 'w').write(str(self.num_split))
+
     numpy.random.seed(seed)
 
     self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
@@ -115,8 +122,8 @@ class JointDNNDataGenerator:
 
 
   def __del__(self):
-    if self.clean_up:
-      shutil.rmtree(self.tmp_dir)
+    if self.clean_up and os.path.exists(self.feat_dir):
+      shutil.rmtree(self.feat_dir)
 
 
   def has_data(self):
@@ -147,7 +154,7 @@ class JointDNNDataGenerator:
     '''
     p1 = Popen (['splice-feats', '--print-args=false', '--left-context='+str(self.splice),
                  '--right-context='+str(self.splice), 
-                 'scp:'+self.tmp_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
+                 'scp:'+self.feat_dir+'/split.'+self.name+'.'+str(self.split_data_counter)+'.scp',
                  'ark:-'], stdout=PIPE, stderr=DEVNULL)
     p2 = Popen (['apply-cmvn', '--print-args=false', '--norm-vars=true', self.exp+'/cmvn.mat',
                  'ark:-', 'ark:-'], stdin=p1.stdout, stdout=PIPE, stderr=DEVNULL)

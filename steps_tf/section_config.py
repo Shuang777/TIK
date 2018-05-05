@@ -24,11 +24,11 @@ def parse(config_tuple):
       config_parsed[i] = float(config_dict[i])
     elif i in ['batch_norm', 'affine_batch_norm', 'with_softmax', 'use_peepholes', 
                'clip_gradients', 'use_std', 'with_nonlin', 'sid_batch_norm', 'fit_buckets',
-               'loop_mode']:
+               'loop_mode', 'clean_up']:
       config_parsed[i] = str2boolean(config_dict[i])
     elif i in ['nonlin', 'op_type', 'nnet_arch', 'lstm_type', 'feat_type', 
                'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers', 
-               'nnet_proto']:
+               'nnet_proto', 'feat_dir']:
       config_parsed[i] = config_dict[i]
     elif i in ['buckets', 'buckets_tr']: # for list of integers
       config_parsed[i] = [int(x) for x in config_dict[i].split(',')]

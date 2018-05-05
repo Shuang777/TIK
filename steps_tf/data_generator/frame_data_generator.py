@@ -104,7 +104,7 @@ class FrameDataGenerator:
 
 
   def __del__(self):
-    if self.clean_up:
+    if self.clean_up and os.path.exists(self.tmp_dir):
       shutil.rmtree(self.tmp_dir)
 
 
