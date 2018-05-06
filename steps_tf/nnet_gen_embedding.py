@@ -26,7 +26,7 @@ logger.info(" ".join(sys.argv))
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--use-gpu', dest = 'use_gpu', action = 'store_true')
 arg_parser.add_argument('--verbose', dest = 'verbose', action = 'store_true')
-arg_parser.add_argument('--gpu-id', type = int, default = -1)
+arg_parser.add_argument('--gpu-ids', type = str, default = '-1')
 arg_parser.add_argument('data', type = str)
 arg_parser.add_argument('model_file', type = str)
 arg_parser.add_argument('wspecifier', type = str)
@@ -59,7 +59,7 @@ num_gpus = nnet_train_conf.get('num_gpus', 1)
 logger.info("initializing the graph")
 nnet = NNTrainer(nnet_conf, input_dim, output_dim, 
                  feature_conf, num_gpus = num_gpus, use_gpu = args.use_gpu,
-                 gpu_id = args.gpu_id)
+                 gpu_ids = args.gpu_ids)
 
 logger.info("loading the model %s", args.model_file)
 model_name=open(args.model_file, 'r').read()

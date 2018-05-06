@@ -26,7 +26,7 @@ class NNTrainer(object):
   '''
 
   def __init__(self, nnet_conf, input_dim, output_dim, feature_conf, num_gpus = 1, 
-               use_gpu = True, gpu_id = -1, summary_dir = None):
+               use_gpu = True, gpu_ids = '-1', summary_dir = None):
     ''' just some basic config for this trainer '''
     self.arch = nnet_conf['nnet_arch']
 
@@ -52,7 +52,7 @@ class NNTrainer(object):
     self.wait_gpu = True
     self.num_gpus = num_gpus
     self.use_gpu = use_gpu
-    self.gpu_id = gpu_id
+    self.gpu_ids = gpu_ids
 
     #summary directory
     self.summary_dir = summary_dir
@@ -147,21 +147,22 @@ class NNTrainer(object):
 
   def set_gpu(self):
     if self.use_gpu and self.num_gpus != 0:
-      if self.gpu_id == -1:
-        p1 = Popen (['pick-gpu', str(self.num_gpus), str(self.gpu_id)], stdout=PIPE)
+      if self.gpu_ids == '-1':
+        p1 = Popen (['pick-gpu', str(self.num_gpus), self.gpu_ids], stdout=PIPE)
         gpu_ids = str(p1.stdout.read())
-      else:
-        gpu_ids = str(self.gpu_id - 1)
 
-      if gpu_ids == "-1":
         if self.wait_gpu:
           logger.info("Waiting for gpus")
           while(gpu_ids == "-1"):
             time.sleep(5)
-            p1 = Popen (['pick-gpu', str(self.num_gpus), str(self.gpu_id)], stdout=PIPE)
+            p1 = Popen (['pick-gpu', str(self.num_gpus), self.gpu_id], stdout=PIPE)
             gpu_ids = str(p1.stdout.read())
         else:
           raise RuntimeError("Picking gpu failed")
+      else:
+        # change 1-indexed to 0-indexed
+        gpu_ids = ','.join([str(int(x)-1) for x in self.gpu_ids.split(',')])  
+        
       os.environ['CUDA_VISIBLE_DEVICES'] = gpu_ids
     else:
       os.environ['CUDA_VISIBLE_DEVICES'] = ''

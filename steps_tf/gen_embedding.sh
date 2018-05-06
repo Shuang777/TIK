@@ -55,7 +55,7 @@ for f in $nnetdir/$model_name $data/feats.scp; do
   [ ! -f $f ] && echo "$0: no such file $f" && exit 1;
 done
 
-if $use_gpu; then  gpu_opts='--use-gpu --gpu-id JOB'; fi
+if $use_gpu; then  gpu_opts='--use-gpu --gpu-ids JOB'; fi
 
 if [ $stage -le 0 ]; then
   $cmd $tc_args JOB=1:$nj $dir/log/extract_xvectors.JOB.log \

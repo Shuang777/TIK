@@ -15,7 +15,7 @@ def parse(config_tuple):
              'num_iters', 'num_gpus', 'num_hidden_layers_after_bn', 'num_proj',
              'pooling_units', 'asr_hidden_layers', 'asr_hidden_units',
              'sid_hidden_layers', 'sid_hidden_units', 'max_split_data_size',
-             'gpu_id', 'split_per_iter']:
+             'split_per_iter', 'gpu_id']:
       config_parsed[i] = int(config_dict[i])
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
                'initial_learning_rate', 'final_learning_rate', 'momentum', 
@@ -28,7 +28,7 @@ def parse(config_tuple):
       config_parsed[i] = str2boolean(config_dict[i])
     elif i in ['nonlin', 'op_type', 'nnet_arch', 'lstm_type', 'feat_type', 
                'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers', 
-               'nnet_proto', 'feat_dir']:
+               'nnet_proto', 'feat_dir', 'gpu_ids']:
       config_parsed[i] = config_dict[i]
     elif i in ['buckets', 'buckets_tr']: # for list of integers
       config_parsed[i] = [int(x) for x in config_dict[i].split(',')]

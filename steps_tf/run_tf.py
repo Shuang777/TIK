@@ -197,7 +197,7 @@ if max_length is not None:
   open(exp+'/max_length', 'w').write(str(max_length))
 
 nnet = NNTrainer(nnet_conf, input_dim, output_dim, feature_conf, 
-                 gpu_id = nnet_train_conf.get('gpu_id', -1),
+                 gpu_ids = nnet_train_conf.get('gpu_ids', '-1'),
                  num_gpus = num_gpus, summary_dir = summary_dir)
 
 mlp_init = exp+'/model.init'

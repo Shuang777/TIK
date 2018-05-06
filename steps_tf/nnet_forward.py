@@ -29,7 +29,7 @@ arg_parser.add_argument('--prior-counts', type = str, default = None)
 arg_parser.add_argument('--transform', type = str, default = None)
 arg_parser.add_argument('--apply-log', dest = 'apply_log', action = 'store_true')
 arg_parser.add_argument('--no-softmax', dest = 'no_softmax', action = 'store_true')
-arg_parser.add_argument('--gpu-id', type = int, default = -1)
+arg_parser.add_argument('--gpu-ids', type = str, default = '-1')
 arg_parser.add_argument('--verbose', dest = 'verbose', action = 'store_true')
 arg_parser.add_argument('data', type = str)
 arg_parser.add_argument('model_file', type = str)
@@ -86,7 +86,7 @@ logger.info("initializing the graph")
 # but during decoding we only use at most 1 gpu
 feature_conf['batch_size'] = feature_conf['batch_size'] * num_gpus
 nnet = NNTrainer(nnet_conf, input_dim, output_dim, feature_conf, 
-                 num_gpus = 1, use_gpu = args.use_gpu, gpu_id = args.gpu_id)
+                 num_gpus = 1, use_gpu = args.use_gpu, gpu_ids = args.gpu_ids)
 
 logger.info("loading the model %s", args.model_file)
 model_name=open(args.model_file, 'r').read()

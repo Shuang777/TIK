@@ -82,7 +82,7 @@ if [ ! -z $transform_dir ]; then
   fi
 fi
 
-if $use_gpu; then  gpu_opts="--use-gpu --gpu-id JOB"; fi
+if $use_gpu; then  gpu_opts="--use-gpu --gpu-ids JOB"; fi
 
 if [ $stage -le 0 ]; then
   $cmd $tc_args JOB=1:$nj $dir/log/decode.JOB.log \
