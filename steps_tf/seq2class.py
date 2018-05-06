@@ -122,56 +122,100 @@ class SEQ2CLASS(object):
   def init_multi(self, graph, nnet_proto_file, seed):
     with graph.as_default(), tf.device('/cpu:0'):
       tf.set_random_seed(seed)
-      feats_holder, mask_holder, labels_holder = nnet.placeholder_seq2class(self.input_dim, 
-                                                           self.max_length,
-                                                           self.batch_size*self.num_towers)
-      
+
       keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
-
-      logits, embeddings = nnet.inference_seq2class(feats_holder, mask_holder, nnet_proto_file, 
-                                        keep_prob_holder)
-
-      outputs = tf.nn.softmax(logits)
-
-      tf.add_to_collection('feats_holder', feats_holder)
-      tf.add_to_collection('labels_holder', labels_holder)
-      tf.add_to_collection('mask_holder', mask_holder)
+      beta_holder = tf.placeholder(tf.float32, shape=[], name = 'beta')
+      
       tf.add_to_collection('keep_prob_holder', keep_prob_holder)
-      tf.add_to_collection('logits', logits)
-      tf.add_to_collection('outputs', outputs)
-      for i in range(len(embeddings)):
-        tf.add_to_collection('embeddings', embeddings[i])
+      tf.add_to_collection('beta_holder', beta_holder)
 
-      self.feats_holder = feats_holder
-      self.labels_holder = labels_holder
-      self.mask_holder = mask_holder
+      # for training buckets 
+      bucket_tr_feats_holders = []
+      bucket_tr_mask_holders = []
+      bucket_tr_labels_holders = []
+      bucket_tr_tower_logits = []
+      bucket_tr_tower_outputs = []
+      for bucket_length in self.buckets_tr:
+
+        feats_holder, mask_holder, labels_holder = nnet.placeholder_seq2class(self.input_dim, 
+                                                           bucket_length,
+                                                           self.batch_size*self.num_towers,
+                                                           name_ext = '_tr'+str(bucket_length))
+      
+        bucket_tr_feats_holders.append(feats_holder)
+        bucket_tr_mask_holders.append(mask_holder)
+        bucket_tr_labels_holders.append(labels_holder)
+
+        tf.add_to_collection('bucket_tr_feats_holders', feats_holder)
+        tf.add_to_collection('bucket_tr_mask_holders', mask_holder)
+        tf.add_to_collection('bucket_tr_labels_holders', labels_holder)
+
+        tower_logits = []
+        tower_outputs = []
+        for i in range(self.num_towers):
+          with tf.device('/gpu:%d' % i):
+            with tf.name_scope('Tower_%d' % i) as scope:
+
+              reuse = False if bucket_length == self.buckets_tr[0] and i == 0 else True
+              
+              tower_start_index = i * self.batch_size
+              tower_end_index = (i+1) * self.batch_size
+
+              tower_feats_holder = feats_holder[tower_start_index:tower_end_index,:,:]
+              tower_mask_holder = mask_holder[tower_start_index:tower_end_index]
+
+              tower_logit, _, _ = nnet.inference_seq2class(tower_feats_holder,
+                                                tower_mask_holder, nnet_proto_file, 
+                                                keep_prob_holder, reuse = reuse)
+
+              tower_output = tf.nn.softmax(tower_logit)
+
+              tf.add_to_collection('bucket_tr%d_tower_logits' % bucket_length, tower_logit)
+              tf.add_to_collection('bucket_tr%d_tower_outputs' % bucket_length, tower_output)
+
+              tower_logits.append(tower_logit)
+              tower_outputs.append(tower_output)
+
+        bucket_tr_tower_logits.append(tower_logits)
+        bucket_tr_tower_outputs.append(tower_outputs)
+
+      # for decoding buckets
+      bucket_feats_holders = []
+      bucket_mask_holders = []
+      bucket_label_holders = []
+      bucket_embeddings = []
+      for bucket_length in self.buckets:
+
+        feats_holder, mask_holder, _ = nnet.placeholder_seq2class(self.input_dim,
+                                                                  bucket_length, 1,
+                                                                  name_ext = '_'+str(bucket_length))
+        _, embeddings, _ = nnet.inference_seq2class(feats_holder, mask_holder, 
+                                                 nnet_proto_file, keep_prob_holder, reuse = True)
+
+        bucket_feats_holders.append(feats_holder)
+        bucket_mask_holders.append(mask_holder)
+        # note that each bucket_length may have multiple embeddings
+        bucket_embeddings.extend(embeddings)
+
+        tf.add_to_collection('bucket_feats_holders', feats_holder)
+        tf.add_to_collection('bucket_mask_holders', mask_holder)
+        for i in range(len(embeddings)):
+          tf.add_to_collection('bucket_embeddings', embeddings[i])
+
       self.keep_prob_holder = keep_prob_holder
-      self.logits = logits
-      self.outputs = outputs
-      self.embeddings = embeddings
+      self.beta_holder = beta_holder
 
-      self.tower_logits = []
-      self.tower_outputs = []
-      for i in range(self.num_towers):
-        with tf.device('/gpu:%d' % i):
-          with tf.name_scope('Tower_%d' % i) as scope:
-            
-            tower_start_index = i * self.batch_size
-            tower_end_index = (i+1) * self.batch_size
+      self.bucket_tr_feats_holders = bucket_tr_feats_holders
+      self.bucket_tr_mask_holders = bucket_tr_mask_holders
+      self.bucket_tr_labels_holders = bucket_tr_labels_holders
+      self.bucket_tr_tower_logits = bucket_tr_tower_logits
+      self.bucket_tr_tower_outputs = bucket_tr_tower_outputs
+      
+      self.bucket_feats_holders = bucket_feats_holders
+      self.bucket_mask_holders = bucket_mask_holders
+      self.bucket_embeddings = bucket_embeddings
 
-            tower_feats_holder = feats_holder[tower_start_index:tower_end_index,:,:]
-            tower_mask_holder = mask_holder[tower_start_index:tower_end_index]
-
-            tower_logits, embeddings = nnet.inference_seq2class(tower_feats_holder,
-                                              tower_mask_holder, nnet_proto_file, 
-                                              keep_prob_holder, reuse = True)
-
-            tower_outputs = tf.nn.softmax(tower_logits)
-
-            tf.add_to_collection('tower_logits', tower_logits)
-            tf.add_to_collection('tower_outputs', tower_outputs)
-            self.tower_logits.append(tower_logits)
-            self.tower_outputs.append(tower_outputs)
+      self.num_embeddings = len(self.bucket_embeddings) / len(self.bucket_feats_holders)
 
       # end towers/gpus
       self.init_all_op = tf.global_variables_initializer()
@@ -211,26 +255,32 @@ class SEQ2CLASS(object):
 
   
   def read_multi(self, graph, load_towers):
-    self.feats_holder = graph.get_collection('feats_holder')[0]
-    self.labels_holder = graph.get_collection('labels_holder')[0]
-    self.mask_holder = graph.get_collection('mask_holder')[0]
     self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
-    self.beta_holder = graph.get_collection('beta_holder')[0]
-    self.logits = graph.get_collection('logits')[0]
-    self.outputs = graph.get_collection('outputs')[0]
-    self.embeddings = []
-    for i in range(len(graph.get_collection('embeddings'))):
-      self.embeddings.append(graph.get_collection('embeddings')[i])
+    self.beta_holder = graph.get_collection('beta_holder')[0] if \
+                            graph.get_collection('beta_holder') else None
 
-    self.tower_logits = []
-    self.tower_outputs = []
-
+    self.bucket_tr_feats_holders = [ x for x in graph.get_collection('bucket_tr_feats_holders') ]
+    self.bucket_tr_mask_holders = [ x for x in graph.get_collection('bucket_tr_mask_holders') ]
+    self.bucket_tr_labels_holders = [ x for x in graph.get_collection('bucket_tr_labels_holders') ]
+    self.bucket_tr_tower_logits = []
+    self.bucket_tr_tower_outputs = []
     if load_towers:
-      for i in range(self.num_towers):
-        tower_logits = graph.get_collection('tower_logits')[i]
-        tower_outputs = graph.get_collection('tower_outputs')[i]
-        self.tower_logits.append(tower_logits)
-        self.tower_outputs.append(tower_outputs)
+      for bucket_length in self.buckets_tr:
+        tower_logits = [x for x in graph.get_collection('bucket_tr%d_tower_logits'%bucket_length)]
+        tower_outputs = [x for x in graph.get_collection('bucket_tr%d_tower_outputs'%bucket_length)]
+        assert len(tower_logits) == self.num_towers
+        assert len(tower_outputs) == self.num_towers
+        self.bucket_tr_tower_logits.append(tower_logits)
+        self.bucket_tr_tower_outputs.append(tower_outputs)
+
+    self.bucket_feats_holders = [ x for x in graph.get_collection('bucket_feats_holders') ]
+    self.bucket_mask_holders = [ x for x in graph.get_collection('bucket_mask_holders') ]
+    self.bucket_embeddings = [ x for x in graph.get_collection('bucket_embeddings') ]
+    if len(self.bucket_embeddings) == 0:
+      # to keep compatible with previous format
+      self.bucket_embeddings = [ x for x in graph.get_collection('embeddings') ]
+    
+    self.num_embeddings = len(self.bucket_embeddings) / len(self.bucket_feats_holders)
 
 
   def init_training(self, graph, optimizer_conf, learning_rate = None):
@@ -282,51 +332,61 @@ class SEQ2CLASS(object):
       self.init_train_op = init_train_op
 
  
-  def init_training_multi(self, graph, optimizer_conf):
-    tower_losses = []
-    tower_grads = []
-    tower_accs = []
+  def init_training_multi(self, graph, optimizer_conf, learning_rate = None):
+
+    self.bucket_tr_loss = []
+    self.bucket_tr_train_op = []
+    self.bucket_tr_eval_acc = []
 
     with graph.as_default(), tf.device('/cpu:0'):
-      
+
       # record variables we have already initialized
       variables_before = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-
-      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
-      opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
-
-      for i in range(self.num_towers):
-        with tf.device('/gpu:%d' % i):
-          with tf.name_scope('Tower_%d' % (i)) as scope:
-            
-            tower_start_index = i*self.batch_size
-            tower_end_index = (i+1)*self.batch_size
-
-            tower_labels_holder = self.labels_holder[tower_start_index:tower_end_index]
-
-            loss = nnet.loss_dnn(self.tower_logits[i], tower_labels_holder)
-            tower_losses.append(loss)
-            grads = nnet.get_gradients(opt, loss)
-            tower_grads.append(grads)
-            eval_acc = nnet.evaluation_dnn(self.tower_logits[i], tower_labels_holder)
-            tower_accs.append(eval_acc)
-
-      grads = nnet.average_gradients(tower_grads)
-      train_op = nnet.apply_gradients(optimizer_conf, opt, grads)
-      losses = tf.reduce_sum(tower_losses)
-      accs = tf.reduce_sum(tower_accs)
       
+      learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
+      if learning_rate is None:
+        opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
+      else:
+        opt = nnet.prep_optimizer(optimizer_conf, learning_rate)
+
+      self.learning_rate_holder = learning_rate_holder
+
+      for (tower_logits, tower_outputs, labels_holder) in zip(self.bucket_tr_tower_logits,
+                                                              self.bucket_tr_tower_outputs,
+                                                              self.bucket_tr_labels_holders):
+        tower_losses = []
+        tower_grads = []
+        tower_accs = []
+        for i in range(self.num_towers):
+          with tf.device('/gpu:%d' % i):
+            with tf.name_scope('Tower_%d' % (i)) as scope:
+              
+              tower_start_index = i*self.batch_size
+              tower_end_index = (i+1)*self.batch_size
+
+              tower_labels_holder = labels_holder[tower_start_index:tower_end_index]
+
+              loss = nnet.loss_dnn(tower_logits[i], tower_labels_holder)
+              tower_losses.append(loss)
+              grads = nnet.get_gradients(opt, loss)
+              tower_grads.append(grads)
+              eval_acc = nnet.evaluation_dnn(tower_logits[i], tower_labels_holder)
+              tower_accs.append(eval_acc)
+
+        bucket_tr_grads = nnet.average_gradients(tower_grads)
+        bucket_tr_train_op = nnet.apply_gradients(optimizer_conf, opt, bucket_tr_grads)
+        bucket_tr_loss = tf.reduce_sum(tower_losses)
+        bucket_tr_eval_acc = tf.reduce_sum(tower_accs)
+
+        self.bucket_tr_loss.append(bucket_tr_loss)
+        self.bucket_tr_train_op.append(bucket_tr_train_op)
+        self.bucket_tr_eval_acc.append(bucket_tr_eval_acc)
+        
       # we need to intialize variables that are newly added
       variables_after = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
       new_variables = list(set(variables_after) - set(variables_before))
       init_train_op = tf.variables_initializer(new_variables)
-
-    self.loss = losses
-    self.learning_rate_holder = learning_rate_holder
-    self.train_op = train_op
-    self.eval_acc = accs
-
-    self.init_train_op = init_train_op
+      self.init_train_op = init_train_op
 
   
   def get_init_train_op(self):
