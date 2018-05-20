@@ -16,7 +16,7 @@ class JOINTDNN(object):
     self.buckets_tr = [max_length] if buckets_tr is None else buckets_tr
     self.buckets = [max_length] if buckets is None else buckets
     self.mode = mode   # 'joint', 'asr', 'sid'
-    if self.mode == 'joint':
+    if self.mode in ['joint', 'joint-sid']:
       asr_output_dim, sid_output_dim = output_dim
       self.asr_output_dim = asr_output_dim
       self.sid_output_dim = sid_output_dim
@@ -31,7 +31,7 @@ class JOINTDNN(object):
 
 
   def make_proto(self, nnet_conf, nnet_proto_file):
-    if self.mode == 'joint':
+    if self.mode in ['joint', 'joint-sid']:
       make_nnet_proto.make_nnet_proto(self.input_dim, nnet_conf['hidden_units'],
                                       nnet_conf, nnet_proto_file+'.shared')
       make_nnet_proto.make_asr_proto(nnet_conf['hidden_units'], self.asr_output_dim, 
@@ -54,8 +54,10 @@ class JOINTDNN(object):
       tf.set_random_seed(seed)
       
       keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
+      alpha_holder = tf.placeholder(tf.float32, shape=[], name = 'alpha')
       beta_holder = tf.placeholder(tf.float32, shape=[], name = 'beta')
       tf.add_to_collection('keep_prob_holder', keep_prob_holder)
+      tf.add_to_collection('alpha_holder', alpha_holder)
       tf.add_to_collection('beta_holder', beta_holder)
 
       bucket_tr_feats_holders = []
@@ -131,6 +133,7 @@ class JOINTDNN(object):
 
       # for training
       self.keep_prob_holder = keep_prob_holder
+      self.alpha_holder = alpha_holder
       self.beta_holder = beta_holder
       self.bucket_tr_feats_holders = bucket_tr_feats_holders
       self.bucket_tr_mask_holders = bucket_tr_mask_holders
@@ -157,6 +160,7 @@ class JOINTDNN(object):
                                                            self.batch_size)
       
       keep_prob_holder = tf.placeholder(tf.float32, shape=[], name = 'keep_prob')
+      alpha_holder = tf.placeholder(tf.float32, shape=[], name = 'alpha')
       beta_holder = tf.placeholder(tf.float32, shape=[], name = 'beta')
 
       shared_logits = nnet.inference_dnn(feats_holder, nnet_proto_file+'.shared', keep_prob_holder,
@@ -174,6 +178,7 @@ class JOINTDNN(object):
       tf.add_to_collection('sid_labels_holder', sid_labels_holder)
       tf.add_to_collection('mask_holder', mask_holder)
       tf.add_to_collection('keep_prob_holder', keep_prob_holder)
+      tf.add_to_collection('alpha_holder', alpha_holder)
       tf.add_to_collection('beta_holder', beta_holder)
       tf.add_to_collection('asr_logits', asr_logits)
       tf.add_to_collection('sid_logits', sid_logits)
@@ -186,6 +191,7 @@ class JOINTDNN(object):
       self.sid_labels_holder = sid_labels_holder
       self.mask_holder = mask_holder
       self.keep_prob_holder = keep_prob_holder
+      self.alpha_holder = alpha_holder
       self.beta_holder = beta_holder
       self.asr_logits = asr_logits
       self.sid_logits = sid_logits
@@ -275,6 +281,7 @@ class JOINTDNN(object):
   def read_single(self, graph):
     ''' read graph from file '''
     self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
+    self.alpha_holder = graph.get_collection('alpha_holder')[0]
     self.beta_holder = graph.get_collection('beta_holder')[0]
 
     self.bucket_tr_feats_holders = [ x for x in graph.get_collection('bucket_tr_feats_holders') ]
@@ -299,6 +306,7 @@ class JOINTDNN(object):
     self.sid_labels_holder = graph.get_collection('sid_labels_holder')[0]
     self.mask_holder = graph.get_collection('mask_holder')[0]
     self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
+    self.alpha_holder = graph.get_collection('alpha_holder')[0]
     self.beta_holder = graph.get_collection('beta_holder')[0]
     self.asr_logits = graph.get_collection('asr_logits')[0]
     self.asr_outputs = graph.get_collection('asr_outputs')[0]
@@ -361,7 +369,7 @@ class JOINTDNN(object):
 
         asr_loss = nnet.loss_dnn(asr_logits, asr_labels_holder, mask_holder)
         sid_loss = nnet.loss_dnn(sid_logits, sid_labels_holder)
-        loss = asr_loss + self.beta_holder * sid_loss
+        loss = self.alpha_holder * asr_loss + self.beta_holder * sid_loss
       
         grads = nnet.get_gradients(opt, loss)
         asr_grads = nnet.get_gradients(opt, asr_loss)
@@ -415,7 +423,7 @@ class JOINTDNN(object):
 
             asr_loss = nnet.loss_dnn(self.tower_asr_logits[i], tower_asr_labels_holder)
             sid_loss = nnet.loss_dnn(self.tower_sid_logits[i], tower_sid_labels_holder)
-            loss = asr_loss + self.beta_holder * sid_loss
+            loss = self.alpha_holder * asr_loss + self.beta_holder * sid_loss
             tower_losses.append(loss)
 
             grads = nnet.get_gradients(opt, loss)
@@ -448,7 +456,7 @@ class JOINTDNN(object):
     self.init_train_op = init_train_op
 
   def set_mode(self, mode):
-    assert mode in ['joint', 'asr', 'sid']
+    assert mode in ['joint', 'asr', 'sid', 'joint-sid']
     self.mode = mode
   
   def get_init_train_op(self):
@@ -457,7 +465,7 @@ class JOINTDNN(object):
   def get_loss(self):
     if self.mode == 'joint':
       return self.bucket_tr_loss[self.last_bucket_id]
-    elif self.mode == 'sid':
+    elif self.mode in ['sid', 'joint-sid']:
       return self.bucket_tr_sid_loss[self.last_bucket_id]
     elif self.mode == 'asr':
       return self.bucket_tr_asr_loss[self.last_bucket_id]
@@ -489,7 +497,7 @@ class JOINTDNN(object):
       return self.bucket_tr_train_op[self.last_bucket_id]
     elif self.mode == 'asr':
       return self.bucket_tr_asr_train_op[self.last_bucket_id]
-    elif self.mode == 'sid':
+    elif self.mode in ['sid', 'joint-sid']:
       return self.bucket_tr_sid_train_op[self.last_bucket_id]
 
   def get_asr_logits(self):
@@ -506,7 +514,7 @@ class JOINTDNN(object):
 
 
   def prep_feed(self, data_gen, train_params):
-    if self.mode == 'joint':
+    if self.mode in ['joint', 'joint-sid']:
       return self.prep_feed_joint(data_gen, train_params)
     elif self.mode == 'sid':
       return self.prep_feed_sid(data_gen, train_params)
@@ -525,12 +533,14 @@ class JOINTDNN(object):
                   self.bucket_tr_sid_labels_holders[bucket_id]: z,
                   self.bucket_tr_mask_holders[bucket_id]: mask,
                   self.keep_prob_holder: 1.0,
+                  self.alpha_holder: 1.0,
                   self.beta_holder: 0.0} 
     
     if train_params is not None:
       feed_dict.update({
                   self.learning_rate_holder: train_params.get('learning_rate', 0.0),
                   self.keep_prob_holder: train_params.get('keep_prob', 1.0),
+                  self.alpha_holder: train_params.get('alpha', 1.0),
                   self.beta_holder: train_params.get('beta', 0.0)})
 
     return feed_dict, x is not None
@@ -546,12 +556,14 @@ class JOINTDNN(object):
                   self.bucket_tr_sid_labels_holders[bucket_id]: y,
                   self.bucket_tr_mask_holders[bucket_id]: mask,
                   self.keep_prob_holder: 1.0,
+                  self.alpha_holder: 1.0,
                   self.beta_holder: 0.0} 
     
     if params is not None:
       feed_dict.update({
                   self.learning_rate_holder: params.get('learning_rate', 0.0),
                   self.keep_prob_holder: params.get('keep_prob', 1.0),
+                  self.alpha_holder: params.get('alpha', 1.0),
                   self.beta_holder: params.get('beta', 0.0)})
 
     return feed_dict, x is not None

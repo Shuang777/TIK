@@ -68,7 +68,8 @@ class NNTrainer(object):
                              buckets_tr = self.buckets_tr, buckets = self.buckets)
     elif self.arch == 'jointdnn':
       self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
-                            buckets_tr = self.buckets_tr, buckets = self.buckets)
+                            buckets_tr = self.buckets_tr, buckets = self.buckets,
+                            mode = nnet_conf.get('mode', 'joint'))
     elif self.arch == 'jointdnn-sid':
       self.model = JOINTDNN(input_dim, output_dim, self.batch_size, self.max_length, num_gpus,
                             buckets_tr = self.buckets_tr, buckets = self.buckets, mode = 'sid')

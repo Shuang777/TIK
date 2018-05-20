@@ -19,7 +19,7 @@ def parse(config_tuple):
       config_parsed[i] = int(config_dict[i])
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
                'initial_learning_rate', 'final_learning_rate', 'momentum', 
-               'keep_prob', 'keep_in_prob', 'keep_out_prob', 'beta', 
+               'keep_prob', 'keep_in_prob', 'keep_out_prob', 'alpha', 'beta', 
                'param_stddev_factor', 'hid_bias_range']:
       config_parsed[i] = float(config_dict[i])
     elif i in ['batch_norm', 'affine_batch_norm', 'with_softmax', 'use_peepholes', 
@@ -28,7 +28,7 @@ def parse(config_tuple):
       config_parsed[i] = str2boolean(config_dict[i])
     elif i in ['nonlin', 'op_type', 'nnet_arch', 'lstm_type', 'feat_type', 
                'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers', 
-               'nnet_proto', 'feat_dir', 'gpu_ids']:
+               'nnet_proto', 'feat_dir', 'gpu_ids', 'mode']:
       config_parsed[i] = config_dict[i]
     elif i in ['buckets', 'buckets_tr']: # for list of integers
       config_parsed[i] = [int(x) for x in config_dict[i].split(',')]

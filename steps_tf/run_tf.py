@@ -241,7 +241,9 @@ else:
 logger.info("### neural net training started at %s", datetime.datetime.today())
 
 nnet_valid_conf = {}
-if 'beta' in nnet_train_conf:  # beta for loss function
+if 'alpha' in nnet_train_conf: # alpha for asr loss
+  nnet_valid_conf['alpha'] = nnet_train_conf['alpha']
+if 'beta' in nnet_train_conf:  # beta for sid loss 
   nnet_valid_conf['beta'] = nnet_train_conf['beta']
 
 loss, acc = nnet.iter_data(exp+'/log/iter00.cv.log', cv_gen, nnet_valid_conf, validation_mode = True)
