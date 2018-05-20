@@ -39,60 +39,27 @@ class FrameDataGenerator:
     self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/suhang/exp/tmp/'))
 
     ## Read number of utterances
-    with open (data + '/utt2spk') as f:
+    with open (data + '/feats.%s.scp' % self.name) as f:
       self.num_utts = sum(1 for line in f)
 
-    cmd = "cat %s/feats.scp | utils/shuffle_list.pl --srand %d > %s/shuffle.%s.scp" % (data, seed, exp, self.name)
-    Popen(cmd, shell=True).communicate()
-
-    # prepare feature pipeline
-    if conf.get('cmvn_type', 'utt') == 'utt':
-      cmd = ['apply-cmvn', '--utt2spk=ark:' + self.data + '/utt2spk',
-                 'scp:' + self.data + '/cmvn.scp',
-                 'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
-    elif conf['cmvn_type'] == 'sliding':
-      cmd = ['apply-cmvn-sliding', '--norm-vars=false', '--center=true', '--cmn-window=300', 
-              'scp:' + exp + '/shuffle.' + self.name + '.scp','ark:- |']
-    else:
-      raise RuntimeError("cmvn_type %s not supported" % conf['cmvn_type'])
-
-    if self.feat_type == 'delta':
-      feat_dim_delta_multiple = 3
-    else:
-      feat_dim_delta_multiple = 1
-    
-    if self.feat_type == 'delta':
-      cmd.extend(['add-deltas', self.delta_opts, 'ark:-', 'ark:- |'])
-    elif self.feat_type in ['lda', 'fmllr']:
-      cmd.extend(['splice-feats', 'ark:-','ark:- |'])
-      cmd.extend(['transform-feats', exp+'/final.mat', 'ark:-', 'ark:- |'])
-
-    if self.feat_type == 'fmllr':
-      assert os.path.exists(trans_dir+'/trans.1') 
-      cmd.extend(['transform-feats','--utt2spk=ark:' + self.data + '/utt2spk',
-              '\'ark:cat %s/trans.* |\'' % trans_dir, 'ark:-', 'ark:-|'])
-    
-    cmd.extend(['copy-feats', 'ark:-', 'ark,scp:'+self.tmp_dir+'/shuffle.'+self.name+'.ark,'+exp+'/'+self.name+'.scp'])
-    Popen(' '.join(cmd), shell=True).communicate()
+    shutil.copyfile("%s/feats.%s.scp" % (self.data, self.name), "%s/%s.scp" % (self.exp, self.name))
 
     if name == 'train':
-      cmd =['splice-feats', '--left-context='+str(self.splice), '--right-context='+str(self.splice),
-            '\'scp:head -10000 %s/%s.scp |\'' % (exp, self.name), 'ark:- |', 'compute-cmvn-stats', 
-            'ark:-', exp+'/cmvn.mat']
+      cmd = ['copy-feats', '\'scp:head -10000 %s/%s.scp |\'' % (exp, self.name), 'ark:- |']
+      cmd.extend(['splice-feats', '--left-context='+str(self.splice),
+                  '--right-context='+str(self.splice), 'ark:- ark:- |'])
+      cmd.extend(['compute-cmvn-stats', 'ark:-', exp+'/cmvn.mat'])
+
       Popen(' '.join(cmd), shell=True).communicate()
 
-    self.num_split = int(math.ceil(1.0 * self.num_utts / self.max_split_data_size))
+    self.num_split = int(open('%s/num_split.%s' % (self.data, self.name)).read())
     for i in range(self.num_split):
-      split_scp_cmd = 'utils/split_scp.pl -j %d ' % (self.num_split)
-      split_scp_cmd += '%d %s/%s.scp %s/split.%s.%d.scp' % (i, exp, self.name, self.tmp_dir, self.name, i)
-      Popen (split_scp_cmd, shell=True).communicate()
-    
+      shutil.copyfile("%s/feats.%s.%d.scp" % (self.data, self.name, (i+1)), "%s/split.%s.%d.scp" % (self.tmp_dir, self.name, i))
+
     numpy.random.seed(seed)
 
-    self.feat_dim = int(check_output(['feat-to-dim', 'scp:%s/%s.scp' %(exp, self.name), '-'])) * \
-                    feat_dim_delta_multiple * (2*self.splice+1)
-    self.split_data_counter = 0
-    
+    self.feat_dim = int(open('%s/feat_dim' % self.data).read()) * (2*self.splice+1)
+
     self.x = numpy.empty ((0, self.feat_dim))
     self.y = numpy.empty (0, dtype='int32')
     

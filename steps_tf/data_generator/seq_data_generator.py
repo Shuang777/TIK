@@ -40,7 +40,7 @@ class SeqDataGenerator:
     if self.loop and self.split_per_iter is None:
       raise RuntimeError('Must specify split_per_iter in loop mode!')
 
-    self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/exp/tmp'))
+    self.tmp_dir = tempfile.mkdtemp(prefix = conf.get('tmp_dir', '/data/suhang/exp/tmp'))
 
     ## Read number of utterances
     with open (self.data + '/feats.%s.scp' % self.name) as f:
@@ -48,18 +48,8 @@ class SeqDataGenerator:
     
     shutil.copyfile("%s/feats.%s.scp" % (self.data, self.name), "%s/%s.scp" % (self.exp, self.name))
 
-    if self.feat_type == 'delta':
-      feat_dim_delta_multiple = 3
-    else:
-      feat_dim_delta_multiple = 1
-
     if name == 'train':
-      if self.feat_type == 'delta':
-        cmd = ['add-deltas', self.delta_opts, '\'scp:head -10000 %s/%s.scp |\'' % (self.exp, self.name), 'ark:- |']
-      elif self.feat_type == 'raw':
-        cmd = ['copy-feats', '\'scp:head -10000 %s/%s.scp |\'' % (self.exp, self.name), 'ark: |']
-      else:
-        raise RuntimeError('feat_type %s not supported' % self.feat_type)
+      cmd = ['copy-feats', '\'scp:head -10000 %s/%s.scp |\'' % (self.exp, self.name), 'ark:- |']
 
       cmd.extend(['splice-feats', '--left-context='+str(self.splice), 
                   '--right-context='+str(self.splice), 'ark:- ark:- |'])

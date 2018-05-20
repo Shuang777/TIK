@@ -250,7 +250,7 @@ class NNTrainer(object):
       duration = time.time() - start_time
       count_steps += 1
 
-      if validation_mode or count_steps % 20 == 0 or count_steps == 1:
+      if validation_mode or count_steps % 1000 == 0 or count_steps == 1:
         acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
         sum_accs += 1.0 * acc
         sum_acc_counts += 1.0 * train_gen.get_last_batch_counts()

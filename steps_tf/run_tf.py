@@ -97,10 +97,6 @@ buckets_tr = nnet_conf.get('buckets_tr', None)    # training buckets
 summary_dir = exp+'/summary'
 
 if nnet_arch in ['lstm', 'bn', 'dnn']:
-  # separate data into 10% cv and 90% training
-  Popen(['myutils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', '--spk', 'true',
-          data, exp+'/tr90', exp+'/cv10']).communicate()
-
   # copy necessary files
   if os.path.exists(ali_dir+'/final.mat'):
     shutil.copyfile(ali_dir+'/final.mat', exp+'/final.mat')
@@ -122,11 +118,8 @@ elif nnet_arch in ['seq2class', 'jointdnn-sid']:
 
 elif nnet_arch == 'jointdnn':
   # separate data into 10% cv and 90% training
-  Popen(['myutils/subset_data_dir_tr_cv.sh', '--cv-utt-percent', '10', '--spk', 'true', 
-         data, exp+'/tr90', exp+'/cv10']).communicate()
-
-  utt2spk_train, spks_train = load_utt2label(exp+'/tr90/utt2spk')
-  utt2spk_valid, spks_valid = load_utt2label(exp+'/cv10/utt2spk')
+  utt2spk_train, spks_train = load_utt2label(data+'/train/utt2spk')
+  utt2spk_valid, spks_valid = load_utt2label(data+'/valid/utt2spk')
 
   assert(spks_train == spks_valid)
   spk2label = assign_spk_label(spks_train)
@@ -146,6 +139,7 @@ elif nnet_arch == 'jointdnn':
   asr_output_dim = int(check_output(
                    'tree-info --print-args=false %s/tree | grep num-pdfs | awk \'{print $2}\''
                    % ali_dir, shell=True).strip())
+
   sid_output_dim = max(utt2label_train.values())+1
 
   output_dim = (asr_output_dim, sid_output_dim)
@@ -157,27 +151,25 @@ num_gpus = nnet_train_conf.get('num_gpus', 1)
 
 # prepare training data generator
 if nnet_arch == 'lstm':
-  tr_gen = UttDataGenerator(exp+'/tr90', ali_labels, ali_dir, 
+  tr_gen = UttDataGenerator(data, ali_labels, ali_dir, 
                             exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
-
-  cv_gen = UttDataGenerator(exp+'/cv10', ali_labels, ali_dir, 
-                            exp, 'cv', feature_conf, num_gpus = num_gpus)
+  cv_gen = UttDataGenerator(data, ali_labels, ali_dir, 
+                            exp, 'valid', feature_conf, num_gpus = num_gpus)
 elif nnet_arch in ['dnn', 'bn']:
-  tr_gen = FrameDataGenerator(exp+'/tr90', ali_labels, ali_dir, 
+  tr_gen = FrameDataGenerator(data, ali_labels, ali_dir, 
                               exp, 'train', feature_conf, shuffle=True, num_gpus = num_gpus)
-
-  cv_gen = FrameDataGenerator(exp+'/cv10', ali_labels, ali_dir, 
-                              exp, 'cv', feature_conf, num_gpus = num_gpus)
+  cv_gen = FrameDataGenerator(data, ali_labels, ali_dir, 
+                              exp, 'valid', feature_conf, num_gpus = num_gpus)
 elif nnet_arch in ['seq2class', 'jointdnn-sid']:
   tr_gen = SeqDataGenerator(data, utt2label_train, None, exp, 'train',
                             feature_conf, shuffle=True, num_gpus = num_gpus, buckets=buckets_tr)
   cv_gen = SeqDataGenerator(data, utt2label_valid, None, exp, 'valid', 
                             feature_conf, num_gpus = num_gpus, buckets=buckets_tr)
 elif nnet_arch == 'jointdnn':
-  tr_gen = JointDNNDataGenerator(exp+'/tr90', utt2label_train, ali_labels, exp, 
-                                 'train', feature_conf, shuffle=True, buckets=buckets_tr)
-  cv_gen = JointDNNDataGenerator(exp+'/cv10', utt2label_valid, ali_labels, 
-                                 exp, 'cv', feature_conf, buckets=buckets_tr)
+  tr_gen = JointDNNDataGenerator(data, utt2label_train, ali_labels, exp, 'train', 
+                                 feature_conf, shuffle=True, buckets=buckets_tr)
+  cv_gen = JointDNNDataGenerator(data, utt2label_valid, ali_labels, exp, 'valid', 
+                                 feature_conf, buckets=buckets_tr)
 else:
   raise RuntimeError("nnet_arch %s not supported yet", nnet_arch)
 
