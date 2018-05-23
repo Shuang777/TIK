@@ -96,6 +96,7 @@ nnet_arch = nnet_conf['nnet_arch']
 buckets_tr = nnet_conf.get('buckets_tr', None)    # training buckets
 summary_dir = exp+'/summary'
 
+logger.info("Loading labels from %s" % data)
 if nnet_arch in ['lstm', 'bn', 'dnn']:
   # copy necessary files
   if os.path.exists(ali_dir+'/final.mat'):

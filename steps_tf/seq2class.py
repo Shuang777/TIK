@@ -54,7 +54,7 @@ class SEQ2CLASS(object):
       # for training buckets
       for bucket_length in self.buckets_tr:
         
-        reuse = False if bucket_length == self.buckets_tr[0] else True
+        reuse = True if bucket_length != self.buckets_tr[0] else False
 
         feats_holder, mask_holder, labels_holder = nnet.placeholder_seq2class(self.input_dim, 
                                                            bucket_length,

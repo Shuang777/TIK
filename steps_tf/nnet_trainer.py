@@ -245,11 +245,13 @@ class NNTrainer(object):
         # training mode: exponential decay
         _, loss, _ = self.sess.run([self.model.get_train_op(), self.model.get_loss(), self.add_global], feed_dict = feed_dict)
 
-      batch_counts = train_gen.get_last_batch_counts()
       sum_avg_loss += loss
-      sum_counts += batch_counts
-      duration = time.time() - start_time
       count_steps += 1
+
+      batch_counts = train_gen.get_last_batch_counts()
+      sum_counts += batch_counts
+
+      duration = time.time() - start_time
 
       if validation_mode or count_steps % 1000 == 0 or count_steps == 1:
         acc = self.sess.run(self.model.get_eval_acc(), feed_dict = feed_dict)
@@ -344,8 +346,8 @@ class NNTrainer(object):
       sum_avg_sid_loss += sid_loss
       count_steps += 1
 
-      last_batch_counts = train_gen.get_last_batch_utts()
-      sum_counts += last_batch_counts
+      batch_counts = train_gen.get_last_batch_utts()
+      sum_counts += batch_counts
 
       duration = time.time() - start_time
 

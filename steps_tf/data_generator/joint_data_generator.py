@@ -177,7 +177,7 @@ class JointDNNDataGenerator:
         start_index += sliding_window
 
       # last part, if long enough (bigger than max_length/2), pad the features
-      if len(feat) - start_index > max_length / 2:
+      if len(feat) - start_index >= sliding_window:
         num_zero = max_length + start_index - len(feat)
         zeros2pad = numpy.zeros((num_zero, len(feat[0])))
         features_packed.append(numpy.concatenate((feat[start_index:], zeros2pad)))
@@ -211,10 +211,11 @@ class JointDNNDataGenerator:
 
       # pick a random bucket to prepare the data
       bucket_id = numpy.random.randint(0, len(self.buckets))
-      self.bucket_id = bucket_id
-      
       x_packed, y_packed, z_packed, mask_packed = self.pack_utt_data(feats, asr_labels, 
                                                           sid_labels, bucket_id)
+      
+      self.bucket_id = bucket_id
+
       # We just throw away data left, and shuffle data, utterance base
       randomInd = numpy.array(range(len(x_packed)))
       numpy.random.shuffle(randomInd)

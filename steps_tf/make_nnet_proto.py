@@ -71,6 +71,8 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
   
   #Use batch normalization after nonlin
   batch_norm = conf.get('batch_norm', False)
+  #Use batch norm before pooling layer?
+  norm_before_pooling = conf.get('norm_before_pooling', True)
 
   #use batch normalization within affine transformation
   affine_batch_norm = conf.get('affine_batch_norm', False)
@@ -100,10 +102,12 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
       (affine_layer, layer_in_dim, layer_out_dim, hid_bias_mean, hid_bias_range, \
        (param_stddev_factor * Glorot(layer_in_dim, layer_out_dim, with_glorot))))
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], layer_out_dim, layer_out_dim))
-    if batch_norm:
+    if batch_norm and norm_before_pooling and i != num_hid_layers - 1:
       nnet_proto.write("<BatchNormalization> <InputDim> %d <OutputDim> %d\n" % (layer_out_dim, layer_out_dim))
-    nnet_proto.write("<Dropout> keep_prob\n")
+#    nnet_proto.write("<Dropout> keep_prob\n")
 
+  if batch_norm:
+    nnet_proto.write("<BatchNormalization> <InputDim> %d <OutputDim> %d\n" % (layer_out_dim, layer_out_dim))
   use_std = conf.get('use_std', False)
   layer_in_dim = layer_out_dim
   layer_out_dim = 2*layer_in_dim if use_std else layer_in_dim
@@ -121,7 +125,7 @@ def make_seq2class_proto(feat_dim, output_dim, conf, nnet_proto_file):
     nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d\n" % (conf['nonlin'], layer_out_dim, layer_out_dim))
     if batch_norm:
       nnet_proto.write("<BatchNormalization> <InputDim> %d <OutputDim> %d\n" % (layer_out_dim, layer_out_dim))
-    nnet_proto.write("<Dropout> keep_prob\n")
+#    nnet_proto.write("<Dropout> keep_prob\n")
 
   nnet_proto.write("<%s> <InputDim> %d <OutputDim> %d <BiasMean> %f <BiasRange> %f <ParamStddev> %f\n" % \
     (affine_layer, layer_out_dim, output_dim, 0.0, 0.0, \
