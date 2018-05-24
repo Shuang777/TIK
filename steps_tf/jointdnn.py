@@ -281,7 +281,11 @@ class JOINTDNN(object):
   def read_single(self, graph):
     ''' read graph from file '''
     self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
-    self.alpha_holder = graph.get_collection('alpha_holder')[0]
+    if len(graph.get_collection('alpha_holder')) != 0:
+      self.alpha_holder = graph.get_collection('alpha_holder')[0]
+    else:
+      self.alpha_holder = None
+
     self.beta_holder = graph.get_collection('beta_holder')[0]
 
     self.bucket_tr_feats_holders = [ x for x in graph.get_collection('bucket_tr_feats_holders') ]
@@ -306,7 +310,10 @@ class JOINTDNN(object):
     self.sid_labels_holder = graph.get_collection('sid_labels_holder')[0]
     self.mask_holder = graph.get_collection('mask_holder')[0]
     self.keep_prob_holder = graph.get_collection('keep_prob_holder')[0]
-    self.alpha_holder = graph.get_collection('alpha_holder')[0]
+    if len(graph.get_collection('alpha_holder')) != 0:
+      self.alpha_holder = graph.get_collection('alpha_holder')[0]
+    else:
+      self.alpha_holder = None
     self.beta_holder = graph.get_collection('beta_holder')[0]
     self.asr_logits = graph.get_collection('asr_logits')[0]
     self.asr_outputs = graph.get_collection('asr_outputs')[0]
@@ -349,6 +356,8 @@ class JOINTDNN(object):
         opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
       else:
         opt = nnet.prep_optimizer(optimizer_conf, learning_rate)
+      if self.alpha_holder is None:
+        self.alpha_holder = tf.placeholder(tf.float32, shape=[], name = 'alpha_holder')
     
       self.learning_rate_holder = learning_rate_holder
         
@@ -408,6 +417,8 @@ class JOINTDNN(object):
       variables_before = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
 
       learning_rate_holder = tf.placeholder(tf.float32, shape=[], name = 'learning_rate')
+      if self.alpha_holder is None:
+        self.alpha_holder = tf.placeholder(tf.float32, shape=[], name = 'alpha_holder')
       opt = nnet.prep_optimizer(optimizer_conf, learning_rate_holder)
 
       for i in range(self.num_towers):
@@ -535,6 +546,7 @@ class JOINTDNN(object):
                   self.keep_prob_holder: 1.0,
                   self.alpha_holder: 1.0,
                   self.beta_holder: 0.0} 
+
     
     if train_params is not None:
       feed_dict.update({
@@ -542,6 +554,7 @@ class JOINTDNN(object):
                   self.keep_prob_holder: train_params.get('keep_prob', 1.0),
                   self.alpha_holder: train_params.get('alpha', 1.0),
                   self.beta_holder: train_params.get('beta', 0.0)})
+    
 
     return feed_dict, x is not None
 
@@ -559,6 +572,7 @@ class JOINTDNN(object):
                   self.alpha_holder: 1.0,
                   self.beta_holder: 0.0} 
     
+
     if params is not None:
       feed_dict.update({
                   self.learning_rate_holder: params.get('learning_rate', 0.0),

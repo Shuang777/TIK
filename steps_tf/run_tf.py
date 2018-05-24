@@ -208,9 +208,10 @@ else:
     # we create the model on top of existing model
     init_model = open(exp+'/init.model.txt').read().strip()
     nnet.read(init_model)
-    nnet_proto_file = exp+'/nnet.proto'
-    nnet.make_proto(nnet_conf, nnet_proto_file)
-    nnet.edit_model(nnet_proto_file, 'finetune-sid')
+    if nnet_conf.get('edit_model', False):
+      nnet_proto_file = exp+'/nnet.proto'
+      nnet.make_proto(nnet_conf, nnet_proto_file)
+      nnet.edit_model(nnet_proto_file, 'finetune-sid')
   else:
     # we create it from scratch
     nnet_proto_file = exp+'/nnet.proto'
