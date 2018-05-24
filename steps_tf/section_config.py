@@ -28,7 +28,7 @@ def parse(config_tuple):
       config_parsed[i] = str2boolean(config_dict[i])
     elif i in ['nonlin', 'op_type', 'nnet_arch', 'lstm_type', 'feat_type', 
                'delta_opts', 'tmp_dir', 'cmvn_type', 'embedding_layers', 
-               'nnet_proto', 'feat_dir', 'gpu_ids', 'mode']:
+               'nnet_proto', 'feat_dir', 'gpu_ids', 'mode', 'scheduler_type']:
       config_parsed[i] = config_dict[i]
     elif i in ['buckets', 'buckets_tr']: # for list of integers
       config_parsed[i] = [int(x) for x in config_dict[i].split(',')]
