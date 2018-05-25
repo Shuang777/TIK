@@ -2,6 +2,11 @@ import os
 import logging
 import datetime
 
+def match_iter_model(directory, model_base):
+  for file in os.listdir(directory):
+    if fnmatch.fnmatch(file, model_base+'*') and file.endswith(".index"):
+      return file
+
 def run_scheduler(logger, nnet, scheduler_conf, optimizer_conf, exp, tr_gen, cv_gen, 
                   nnet_train_conf, nnet_valid_conf):
 

@@ -31,11 +31,6 @@ def load_utt2label(utt2label_file, convert_int = False):
         labels.add(label)
   return utt2label, labels
 
-def match_iter_model(directory, model_base):
-  for file in os.listdir(directory):
-    if fnmatch.fnmatch(file, model_base+'*') and file.endswith(".index"):
-      return file
-
 def get_alignments(exp, ali_dir):
   p1 = Popen (['ali-to-pdf', '%s/final.mdl' % exp, 'ark:gunzip -c %s/ali.*.gz |' % ali_dir,
                'ark,t:-'], stdout = PIPE)
