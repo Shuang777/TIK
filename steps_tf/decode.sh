@@ -77,7 +77,7 @@ if [ ! -z $transform_dir ]; then
     trans=trans.JOB
   else
     for n in $(seq $nj_orig); do cat $transform_dir/trans.$n; done | \
-       copy-feats ark:- ark,scp:$dir/$trans.ark,$dir/$trans.scp
+       copy-feats ark:- ark,scp:$dir/trans.ark,$dir/trans.scp
     trans=trans.ark
   fi
 fi
