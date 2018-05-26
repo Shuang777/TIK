@@ -4,7 +4,6 @@ import re
 import shutil
 import datetime
 import logging
-import fnmatch
 import atexit
 from six.moves import configparser
 from subprocess import Popen, PIPE, check_output
@@ -114,15 +113,8 @@ elif nnet_arch in ['seq2class', 'jointdnn-sid']:
   output_dim = max(utt2label_train.values())+1
 
 elif nnet_arch == 'jointdnn':
-  # separate data into 10% cv and 90% training
-  utt2spk_train, spks_train = load_utt2label(data+'/train/utt2spk')
-  utt2spk_valid, spks_valid = load_utt2label(data+'/valid/utt2spk')
-
-  assert(spks_train == spks_valid)
-  spk2label = assign_spk_label(spks_train)
-
-  utt2label_train = mapspk2label(utt2spk_train, spk2label)
-  utt2label_valid = mapspk2label(utt2spk_valid, spk2label)
+  utt2label_train, _ = load_utt2label(data + '/utt2label.train', convert_int = True)
+  utt2label_valid, _ = load_utt2label(data + '/utt2label.valid', convert_int = True)
 
   # copy necessary files
   if os.path.exists(ali_dir+'/final.mat'):
