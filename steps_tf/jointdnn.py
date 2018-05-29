@@ -16,7 +16,7 @@ class JOINTDNN(object):
     self.buckets_tr = [max_length] if buckets_tr is None else buckets_tr
     self.buckets = [max_length] if buckets is None else buckets
     self.mode = mode   # 'joint', 'asr', 'sid'
-    if self.mode in ['joint', 'joint-sid']:
+    if self.mode in ['joint', 'joint-sid', 'joint-asr']:
       asr_output_dim, sid_output_dim = output_dim
       self.asr_output_dim = asr_output_dim
       self.sid_output_dim = sid_output_dim
@@ -525,60 +525,44 @@ class JOINTDNN(object):
 
 
   def prep_feed(self, data_gen, train_params):
-    if self.mode in ['joint', 'joint-sid']:
-      return self.prep_feed_joint(data_gen, train_params)
-    elif self.mode == 'sid':
-      return self.prep_feed_sid(data_gen, train_params)
-    else:
-      raise RuntimeError('mode %s not supported yet' % self.mode)
 
-
-  def prep_feed_joint(self, data_gen, train_params):
-
-    x, y, z, mask, bucket_id = data_gen.get_batch_utterances()
-
-    self.last_bucket_id = bucket_id
-
-    feed_dict = { self.bucket_tr_feats_holders[bucket_id]: x,
-                  self.bucket_tr_asr_labels_holders[bucket_id]: y,
-                  self.bucket_tr_sid_labels_holders[bucket_id]: z,
-                  self.bucket_tr_mask_holders[bucket_id]: mask,
-                  self.keep_prob_holder: 1.0,
+    feed_dict = { self.keep_prob_holder: 1.0,
                   self.alpha_holder: 1.0,
                   self.beta_holder: 0.0} 
 
-    
+    if self.mode in ['joint', 'joint-sid']:
+      x, y, z, mask, bucket_id = data_gen.get_batch_utterances()
+      feed_dict.update({ 
+        self.bucket_tr_feats_holders[bucket_id]: x,
+        self.bucket_tr_asr_labels_holders[bucket_id]: y,
+        self.bucket_tr_sid_labels_holders[bucket_id]: z,
+        self.bucket_tr_mask_holders[bucket_id]: mask})
+
+    elif self.mode == 'sid':
+      x, z, mask, bucket_id = data_gen.get_batch_utterances()
+      feed_dict.update({ 
+        self.bucket_tr_feats_holders[bucket_id]: x,
+        self.bucket_tr_sid_labels_holders[bucket_id]: z,
+        self.bucket_tr_mask_holders[bucket_id]: mask})
+
+    elif self.mode == 'asr':
+      x, y, mask, bucket_id = data_gen.get_batch_utterances()
+      feed_dict.update({ 
+        self.bucket_tr_feats_holders[bucket_id]: x,
+        self.bucket_tr_asr_labels_holders[bucket_id]: y,
+        self.bucket_tr_mask_holders[bucket_id]: mask})
+
+    else:
+      raise RuntimeError("mode %s not supported" % self.mode)
+
+    self.last_bucket_id = bucket_id
+
     if train_params is not None:
       feed_dict.update({
                   self.learning_rate_holder: train_params.get('learning_rate', 0.0),
                   self.keep_prob_holder: train_params.get('keep_prob', 1.0),
                   self.alpha_holder: train_params.get('alpha', 1.0),
                   self.beta_holder: train_params.get('beta', 0.0)})
-    
-
-    return feed_dict, x is not None
-
-
-  def prep_feed_sid(self, data_gen, params):
-    
-    x, y, mask, bucket_id = data_gen.get_batch_utterances()
-
-    self.last_bucket_id = bucket_id
-
-    feed_dict = { self.bucket_tr_feats_holders[bucket_id]: x,
-                  self.bucket_tr_sid_labels_holders[bucket_id]: y,
-                  self.bucket_tr_mask_holders[bucket_id]: mask,
-                  self.keep_prob_holder: 1.0,
-                  self.alpha_holder: 1.0,
-                  self.beta_holder: 0.0} 
-    
-
-    if params is not None:
-      feed_dict.update({
-                  self.learning_rate_holder: params.get('learning_rate', 0.0),
-                  self.keep_prob_holder: params.get('keep_prob', 1.0),
-                  self.alpha_holder: params.get('alpha', 1.0),
-                  self.beta_holder: params.get('beta', 0.0)})
 
     return feed_dict, x is not None
 

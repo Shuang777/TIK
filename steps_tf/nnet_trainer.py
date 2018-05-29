@@ -650,7 +650,7 @@ class NNTrainer(object):
       feed_dict, embedding_layer = self.model.prep_forward_feed(feats, mask, 
                                                                 bucket_id, embedding_index)
       embedding = self.sess.run(embedding_layer, feed_dict=feed_dict)
-    elif self.arch == 'jointdnn':
+    elif self.arch in ['jointdnn', 'jointdnn-sid']:
       feed_dict, embedding_layer = self.model.prep_forward_sid(feats, mask, 
                                                                bucket_id, embedding_index)
       embedding = self.sess.run(embedding_layer, feed_dict=feed_dict)
