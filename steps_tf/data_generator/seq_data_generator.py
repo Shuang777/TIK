@@ -33,9 +33,11 @@ class SeqDataGenerator:
     if self.name == 'train':
       self.loop = conf.get('loop_mode', False)
       self.split_per_iter = conf.get('split_per_iter', None)
+      self.noise_ratio = conf.get('noise_ratio', 0.0)   # add random noise to training data
     else:
       self.loop = False
       self.split_per_iter = None
+      self.noise_ratio = 0.0
     self.split_counter = 0        # keep increasing
     self.split_data_counter = 0   # loop from 0 to num_split
     if self.loop and self.split_per_iter is None:
@@ -266,6 +268,10 @@ class SeqDataGenerator:
     x_mini = self.x[self.batch_pointer:self.batch_pointer+self.batch_size]
     y_mini = self.y[self.batch_pointer:self.batch_pointer+self.batch_size]
     mask_mini = self.mask[self.batch_pointer:self.batch_pointer+self.batch_size]
+
+    if self.noise_ratio != 0.0:
+      random_noise = numpy.random.normal(0.0, self.noise_ratio, x_mini.shape)
+      x_mini += random_noise
 
     self.last_batch_utts = len(y_mini)
     self.batch_pointer += self.batch_size

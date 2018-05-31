@@ -20,7 +20,7 @@ def parse(config_tuple):
     elif i in ['halving_factor', 'start_halving_impr', 'end_halving_impr', 
                'initial_learning_rate', 'final_learning_rate', 'momentum', 
                'keep_prob', 'keep_in_prob', 'keep_out_prob', 'alpha', 'beta', 
-               'param_stddev_factor', 'hid_bias_range']:
+               'param_stddev_factor', 'hid_bias_range', 'noise_ratio']:
       config_parsed[i] = float(config_dict[i])
     elif i in ['batch_norm', 'affine_batch_norm', 'with_softmax', 'use_peepholes', 
                'clip_gradients', 'use_std', 'with_nonlin', 'sid_batch_norm', 'fit_buckets',
