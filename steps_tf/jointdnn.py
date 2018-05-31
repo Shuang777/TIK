@@ -30,8 +30,12 @@ class JOINTDNN(object):
     return self.output_dim
 
 
+  def get_buckets_tr(self):
+    return self.buckets_tr
+
+
   def make_proto(self, nnet_conf, nnet_proto_file):
-    if self.mode in ['joint', 'joint-sid']:
+    if self.mode in ['joint', 'joint-sid', 'joint-asr']:
       make_nnet_proto.make_nnet_proto(self.input_dim, nnet_conf['hidden_units'],
                                       nnet_conf, nnet_proto_file+'.shared')
       make_nnet_proto.make_asr_proto(nnet_conf['hidden_units'], self.asr_output_dim, 
@@ -467,7 +471,7 @@ class JOINTDNN(object):
     self.init_train_op = init_train_op
 
   def set_mode(self, mode):
-    assert mode in ['joint', 'asr', 'sid', 'joint-sid']
+    assert mode in ['joint', 'asr', 'sid', 'joint-sid', 'joint-asr']
     self.mode = mode
   
   def get_init_train_op(self):
@@ -478,10 +482,10 @@ class JOINTDNN(object):
       return self.bucket_tr_loss[self.last_bucket_id]
     elif self.mode in ['sid', 'joint-sid']:
       return self.bucket_tr_sid_loss[self.last_bucket_id]
-    elif self.mode == 'asr':
+    elif self.mode in ['asr', 'joint-asr']:
       return self.bucket_tr_asr_loss[self.last_bucket_id]
     else:
-      raise RuntimeError('mode % not supported' % self.mode)
+      raise RuntimeError('mode %s not supported' % self.mode)
 
   def get_asr_loss(self):
     return self.bucket_tr_asr_loss[self.last_bucket_id]
@@ -506,7 +510,7 @@ class JOINTDNN(object):
   def get_train_op(self):
     if self.mode == 'joint':
       return self.bucket_tr_train_op[self.last_bucket_id]
-    elif self.mode == 'asr':
+    elif self.mode in ['asr', 'joint-asr']:
       return self.bucket_tr_asr_train_op[self.last_bucket_id]
     elif self.mode in ['sid', 'joint-sid']:
       return self.bucket_tr_sid_train_op[self.last_bucket_id]
@@ -530,7 +534,7 @@ class JOINTDNN(object):
                   self.alpha_holder: 1.0,
                   self.beta_holder: 0.0} 
 
-    if self.mode in ['joint', 'joint-sid']:
+    if self.mode in ['joint', 'joint-sid', 'joint-asr']:
       x, y, z, mask, bucket_id = data_gen.get_batch_utterances()
       feed_dict.update({ 
         self.bucket_tr_feats_holders[bucket_id]: x,
@@ -545,8 +549,9 @@ class JOINTDNN(object):
         self.bucket_tr_sid_labels_holders[bucket_id]: z,
         self.bucket_tr_mask_holders[bucket_id]: mask})
 
-    elif self.mode == 'asr':
-      x, y, mask, bucket_id = data_gen.get_batch_utterances()
+    elif self.mode == 'asr': 
+      # we assume we use the same data gen as joint dnn
+      x, y, z, mask, bucket_id = data_gen.get_batch_utterances()
       feed_dict.update({ 
         self.bucket_tr_feats_holders[bucket_id]: x,
         self.bucket_tr_asr_labels_holders[bucket_id]: y,
@@ -568,8 +573,9 @@ class JOINTDNN(object):
 
 
   def prep_forward_feed(self, x):
-
-    feed_dict = { self.feats_holder: x}
+    # we fix it to use the first bucket at this point
+    self.last_bucket_id = 0
+    feed_dict = { self.bucket_tr_feats_holders[0]: x}
 
     return feed_dict
     

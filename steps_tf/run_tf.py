@@ -54,7 +54,9 @@ def mapspk2label(utt2spk, spk2label):
   return utt2label
 
 if __name__ != '__main__':
-  raise ImportError ('This script can only be run, and can\'t be imported')
+  raise ImportError ('This script can only be run as main, and can\'t be imported')
+
+logger.info(' '.join(sys.argv))
 
 if len(sys.argv) != 5:
   raise TypeError ('USAGE: run_tf.py data_tr ali_tr dnn_dir')
@@ -112,7 +114,7 @@ elif nnet_arch in ['seq2class', 'jointdnn-sid']:
 
   output_dim = max(utt2label_train.values())+1
 
-elif nnet_arch == 'jointdnn':
+elif nnet_arch in ['jointdnn', 'jointdnn-asr']:
   utt2label_train, _ = load_utt2label(data + '/utt2label.train', convert_int = True)
   utt2label_valid, _ = load_utt2label(data + '/utt2label.valid', convert_int = True)
 
@@ -154,7 +156,7 @@ elif nnet_arch in ['seq2class', 'jointdnn-sid']:
                             feature_conf, shuffle=True, num_gpus = num_gpus, buckets=buckets_tr)
   cv_gen = SeqDataGenerator(data, utt2label_valid, None, exp, 'valid', 
                             feature_conf, num_gpus = num_gpus, buckets=buckets_tr)
-elif nnet_arch == 'jointdnn':
+elif nnet_arch in ['jointdnn', 'jointdnn-asr']:
   tr_gen = JointDNNDataGenerator(data, utt2label_train, ali_labels, exp, 'train', 
                                  feature_conf, shuffle=True, buckets=buckets_tr)
   cv_gen = JointDNNDataGenerator(data, utt2label_valid, ali_labels, exp, 'valid', 
@@ -167,9 +169,10 @@ else:
 input_dim = tr_gen.get_feat_dim()
 max_length = feature_conf.get('max_length', None)
 
-if nnet_arch in ['dnn', 'lstm']:
+if nnet_arch in ['dnn', 'lstm', 'jointdnn']:
   # save alignment priors
-  tr_gen.save_target_counts(output_dim, exp+'/ali_train_pdf.counts')
+  num_targets = output_dim[0] if nnet_arch == 'jointdnn' else output_dim
+  tr_gen.save_target_counts(num_targets, exp+'/ali_train_pdf.counts')
 
 # save input_dim and output_dim
 open(exp+'/input_dim', 'w').write(str(input_dim))
@@ -191,7 +194,7 @@ elif os.path.isfile(mlp_init+'.index'):
   mlp_best = mlp_init
 else:
   # we need to create the model
-  if nnet_arch == 'jointdnn-sid':
+  if nnet_arch in ['jointdnn-sid', 'jointdnn-asr']:
     # we create the model on top of existing model
     init_model = open(exp+'/init.model.txt').read().strip()
     nnet.read(init_model)

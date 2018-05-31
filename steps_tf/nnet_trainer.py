@@ -420,7 +420,7 @@ class NNTrainer(object):
     return feats_padded
  
  
-  def pack_utterance(self, feats):
+  def pack_utterance(self, feats, max_length = None):
     '''
     args:
       feats: list of array, i.e. matrix of size [num_frames, feat_dim]
@@ -428,7 +428,7 @@ class NNTrainer(object):
       feat_packs: np 3-d array of size [num_batches, max_length, feat_dim]
       seq_length: np array of size [num_batches]
     '''
-    max_length = self.max_length
+    max_length = self.max_length if max_length else None
     jitter_window = self.jitter_window
     start_index = 0
     feats_packed = []
@@ -468,14 +468,15 @@ class NNTrainer(object):
     return feats_packed, seq_length, post_pick
 
 
-  def pack_utterance_jointdnn(self, feats):
+  def pack_utterance_jointdnn(self, feats, max_length = None):
     '''
     args:
       feats: list of array, i.e. matrix of size [num_frames, feat_dim]
     output:
       feat_packs: np 3-d array of size [num_batches, max_length, feat_dim]
     '''
-    max_length = self.max_length
+    if max_length is None:
+      max_length = self.max_length
     start_index = 0
     feats_packed = []
     while start_index + max_length < len(feats):
@@ -619,7 +620,8 @@ class NNTrainer(object):
       posts: np 2-d array of size[num_frames, num_targets]
     '''
     # we use a rolling window to process the whole utterance
-    feats_packed = self.pack_utterance_jointdnn(feats)
+    feats_packed = self.pack_utterance_jointdnn(feats, 
+                        max_length = self.buckets_tr[0])
 
     posts = []
     assert len(feats_packed) % self.batch_size == 0
