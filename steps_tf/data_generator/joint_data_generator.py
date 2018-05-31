@@ -246,6 +246,10 @@ class JointDNNDataGenerator:
   def get_batch_size(self):
     return self.batch_size
 
+  def get_last_batch_counts(self):
+    # TODO: this is a temporary solution; not suitable for sid finetuning
+    return self.get_last_batch_frames()
+
   def get_last_batch_utts(self):
     return self.last_batch_utts
 
@@ -260,3 +264,13 @@ class JointDNNDataGenerator:
 
   def count_units(self):
     return 'utterances'
+
+  def save_target_counts(self, num_targets, output_file):
+    # here I'm assuming training data is less than 10,000 hours
+    counts = numpy.zeros(num_targets, dtype='int64')
+    for alignment in self.asr_labels.values():
+      counts += numpy.bincount(alignment, minlength = num_targets)
+    # add a ``half-frame'' to all the elements to avoid zero-counts (decoding issue)
+    counts = counts.astype(float) + 0.5
+    numpy.savetxt(output_file, counts, fmt = '%.1f')
+
