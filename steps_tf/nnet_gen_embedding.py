@@ -26,11 +26,12 @@ logger.info(" ".join(sys.argv))
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--use-gpu', dest = 'use_gpu', action = 'store_true')
 arg_parser.add_argument('--verbose', dest = 'verbose', action = 'store_true')
+arg_parser.add_argument('--use-raw-data', dest = 'use_raw_data', action = 'store_true')
 arg_parser.add_argument('--gpu-ids', type = str, default = '-1')
 arg_parser.add_argument('data', type = str)
 arg_parser.add_argument('model_file', type = str)
 arg_parser.add_argument('wspecifier', type = str)
-arg_parser.set_defaults(use_gpu = False, verbose = False)
+arg_parser.set_defaults(use_gpu = False, verbose = False, use_raw_data = False)
 args = arg_parser.parse_args()
 
 srcdir = os.path.dirname(args.model_file)
@@ -66,19 +67,22 @@ model_name=open(args.model_file, 'r').read()
 nnet.read(model_name)
 
 # here we are doing context window and feature normalization
-if cmvn_type == 'utt':
-  feats = 'ark:apply-cmvn --utt2spk=ark:'+args.data+'/utt2spk scp:'+args.data+'/cmvn.scp ' \
-          + 'scp:'+args.data+'/feats.scp ark:- |'
-elif cmvn_type == 'sliding':
-  feats = 'ark:apply-cmvn-sliding --norm-vars=false --center=true --cmn-window=300 scp:' \
-          + args.data + '/feats.scp ark:- |'
+if args.use_raw_data:
+  feats = 'ark:copy-feats scp:' + args.data + '/feats.scp ark:- |'
 else:
-  raise RuntimeError("cmvn_type %s not supported" % cmvn_type)
+  if cmvn_type == 'utt':
+    feats = 'ark:apply-cmvn --utt2spk=ark:'+args.data+'/utt2spk scp:'+args.data+'/cmvn.scp ' \
+            + 'scp:'+args.data+'/feats.scp ark:- |'
+  elif cmvn_type == 'sliding':
+    feats = 'ark:apply-cmvn-sliding --norm-vars=false --center=true --cmn-window=300 scp:' \
+            + args.data + '/feats.scp ark:- |'
+  else:
+    raise RuntimeError("cmvn_type %s not supported" % cmvn_type)
 
-feats += " select-voiced-frames ark:- scp,s,cs:"+args.data+"/vad.scp ark:- |"
+  feats += " select-voiced-frames ark:- scp,s,cs:"+args.data+"/vad.scp ark:- |"
 
-if feat_type == 'delta':
-  feats += " add-deltas --print-args=false " + delta_opts + " ark:- ark:- |"
+  if feat_type == 'delta':
+    feats += " add-deltas --print-args=false " + delta_opts + " ark:- ark:- |"
 
 feats += " splice-feats --print-args=false --left-context="+str(splice) + \
          " --right-context="+str(splice)+" ark:- ark:-|"

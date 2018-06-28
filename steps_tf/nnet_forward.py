@@ -56,17 +56,23 @@ splice = feature_conf['context_width']
 feat_type = feature_conf.get('feat_type', 'raw')
 delta_opts = feature_conf.get('delta_opts', '')
 
-if feature_conf.get('cmvn_type', 'utt') == 'utt':
+if feature_conf['cmvn_type'] == 'utt':
   feats = 'ark:apply-cmvn --utt2spk=ark:' + args.data + '/utt2spk ' + \
         ' scp:' + args.data + '/cmvn.scp scp:' + args.data + '/feats.scp ark:- |'
 elif feature_conf['cmvn_type'] == 'sliding':
   feats = 'ark:apply-cmvn-sliding --norm-vars=false --center=true --cmn-window=300 scp:' + \
           args.data + '/feats.scp ark:- |'
-    
+else:
+  raise RuntimeError("cmvn type %s not supported" % feature_conf['cmvn_type'])
+
 if feat_type == 'delta':
   feats += ' add-deltas ' + delta_opts + ' ark:- ark:- |'
 elif feat_type in ['lda', 'fmllr']:
   feats += ' splice-feats ark:- ark:- | transform-feats ' + srcdir + '/final.mat ark:- ark:- |'
+elif feat_type == 'raw':
+  pass
+else:
+  raise RuntimeError("feat_type %s not supported" % feat_type)
 
 if feat_type == 'fmllr':
   assert os.path.exists(args.transform)

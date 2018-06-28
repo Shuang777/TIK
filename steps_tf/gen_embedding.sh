@@ -9,6 +9,7 @@ nj=10
 tc_args=
 utt_mode=false
 use_gpu=false
+use_raw_data=false
 cmd=run.pl
 model_name=final.model.txt
 # End configuration
@@ -56,10 +57,11 @@ for f in $nnetdir/$model_name $data/feats.scp; do
 done
 
 if $use_gpu; then  gpu_opts='--use-gpu --gpu-ids JOB'; fi
+if $use_raw_data; then use_raw_opts='--use-raw-data'; fi
 
 if [ $stage -le 0 ]; then
   $cmd $tc_args JOB=1:$nj $dir/log/extract_xvectors.JOB.log \
-    python steps_tf/nnet_gen_embedding.py $gpu_opts --verbose \
+    python steps_tf/nnet_gen_embedding.py $gpu_opts $use_raw_opts --verbose \
     $sdata/JOB $nnetdir/$model_name ark,scp:$dir/xvector.JOB.ark,$dir/xvector.JOB.scp
 fi
 
