@@ -169,9 +169,9 @@ else:
 input_dim = tr_gen.get_feat_dim()
 max_length = feature_conf.get('max_length', None)
 
-if nnet_arch in ['dnn', 'lstm', 'jointdnn']:
+if nnet_arch in ['dnn', 'lstm', 'jointdnn', 'jointdnn-asr']:
   # save alignment priors
-  num_targets = output_dim[0] if nnet_arch == 'jointdnn' else output_dim
+  num_targets = output_dim[0] if nnet_arch in ['jointdnn', 'jointdnn-asr'] else output_dim
   tr_gen.save_target_counts(num_targets, exp+'/ali_train_pdf.counts')
 
 # save input_dim and output_dim

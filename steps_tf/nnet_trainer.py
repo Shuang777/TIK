@@ -507,7 +507,7 @@ class NNTrainer(object):
       posts = self.gen_bn_feats(feats, no_softmax)
     elif self.arch == 'lstm':
       posts = self.predict_lstm(feats, no_softmax)
-    elif self.arch == 'jointdnn':
+    elif self.arch in ['jointdnn', 'jointdnn-asr']:
       posts = self.predict_jointdnn(feats, no_softmax)
     else:
       raise RuntimeError("arch type %s not supported", self.arch)
