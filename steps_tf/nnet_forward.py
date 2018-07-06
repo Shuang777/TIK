@@ -55,11 +55,12 @@ splice = feature_conf['context_width']
 # prepare feature pipeline
 feat_type = feature_conf.get('feat_type', 'raw')
 delta_opts = feature_conf.get('delta_opts', '')
+cmvn_type = feature_conf.get('cmvn_type', 'utt')
 
-if feature_conf['cmvn_type'] == 'utt':
+if cmvn_type == 'utt':
   feats = 'ark:apply-cmvn --utt2spk=ark:' + args.data + '/utt2spk ' + \
         ' scp:' + args.data + '/cmvn.scp scp:' + args.data + '/feats.scp ark:- |'
-elif feature_conf['cmvn_type'] == 'sliding':
+elif cmvn_type == 'sliding':
   feats = 'ark:apply-cmvn-sliding --norm-vars=false --center=true --cmn-window=300 scp:' + \
           args.data + '/feats.scp ark:- |'
 else:

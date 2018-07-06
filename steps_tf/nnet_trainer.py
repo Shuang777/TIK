@@ -428,6 +428,7 @@ class NNTrainer(object):
       feat_packs: np 3-d array of size [num_batches, max_length, feat_dim]
       seq_length: np array of size [num_batches]
     '''
+    batch_size = self.batch_size
     max_length = self.max_length if max_length else None
     jitter_window = self.jitter_window
     start_index = 0
@@ -454,7 +455,7 @@ class NNTrainer(object):
 
     
     # now we need to pad more zeros to fit the place holder, because each place holder can only host [ batch_size x max_length x feat_dim ] this many data
-    batches2pad = self.batch_size - len(feats_packed) % self.batch_size
+    batches2pad = batch_size - len(feats_packed) % batch_size
     if batches2pad != 0:
       zeros2pad = np.zeros((max_length, len(feats[0])))
       for i in range(batches2pad):
@@ -581,15 +582,16 @@ class NNTrainer(object):
     output:
       posts: np 2-d array of size[num_frames, num_targets]
     '''
+    batch_size = self.batch_size
     # we use a rolling window to process the whole utterance
-    feats_packed, seq_length, post_pick = self.pack_utterance(feats)
+    feats_packed, seq_length, post_pick = self.pack_utterance(feats, max_length = self.max_length)
 
     posts = []
-    assert len(feats_packed) % self.batch_size == 0
-    num_batches = len(feats_packed) / self.batch_size
+    assert len(feats_packed) % batch_size == 0
+    num_batches = len(feats_packed) / batch_size
     for i in range(num_batches):
-      batch_start = i*self.batch_size
-      batch_end = (i+1)*self.batch_size
+      batch_start = i*batch_size
+      batch_end = (i+1)*batch_size
       feats_batch = feats_packed[batch_start:batch_end, :]
       seq_length_batch = seq_length[batch_start:batch_end]
 
@@ -601,7 +603,7 @@ class NNTrainer(object):
         batch_posts = self.sess.run(self.model.get_outputs(), feed_dict=feed_dict)
       # batch_posts of size [batch_size, max_len, num_targets]
 
-      for piece in range(self.batch_size):
+      for piece in range(batch_size):
         if post_pick[piece][0] != post_pick[piece][1]:
           # post_pick specifies the index of posterior to pick out to form decoding sequence
           posts.append(batch_posts[piece, post_pick[piece][0]:post_pick[piece][1]])
