@@ -1,5 +1,5 @@
-# TiwK
-Tensorflow integration with Kaldi
+# TIK
+Tensorflow integrated (with) Kaldi
 
 Supports frame-level DNN hybrid model, LSTM model
 
